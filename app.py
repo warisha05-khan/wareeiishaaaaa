@@ -1,6 +1,6 @@
 """
 ICT in Health - Hospital Management System
-With Secure Login: Admin Portal + Patient Portal
+With Secure Login: Admin Portal + Patient Portal (ID + Name only)
 All existing features preserved with role-based access
 """
 
@@ -34,9 +34,6 @@ def hash_password(password):
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD_HASH = hash_password("12345")
 
-# File storage for patient login credentials
-CREDENTIALS_FILE = "hospital_data/patient_credentials.csv"
-
 # Initialize session state for login
 def init_auth():
     if 'logged_in' not in st.session_state:
@@ -50,42 +47,16 @@ def init_auth():
 
 init_auth()
 
-def save_patient_credentials(patient_id, password):
-    """Save patient login credentials"""
-    import pandas as pd
-    os.makedirs("hospital_data", exist_ok=True)
-    
-    hashed_pwd = hash_password(password)
-    
-    if os.path.exists(CREDENTIALS_FILE):
-        df = pd.read_csv(CREDENTIALS_FILE)
-        # Check if patient already exists
-        if patient_id in df['patient_id'].values:
-            df.loc[df['patient_id'] == patient_id, 'password_hash'] = hashed_pwd
-        else:
-            new_entry = pd.DataFrame([{'patient_id': patient_id, 'password_hash': hashed_pwd}])
-            df = pd.concat([df, new_entry], ignore_index=True)
-    else:
-        df = pd.DataFrame([{'patient_id': patient_id, 'password_hash': hashed_pwd}])
-    
-    df.to_csv(CREDENTIALS_FILE, index=False)
-
-def verify_patient_credentials(patient_id, password):
-    """Verify patient login credentials"""
-    if not os.path.exists(CREDENTIALS_FILE):
-        return False
-    
-    df = pd.read_csv(CREDENTIALS_FILE)
-    patient_data = df[df['patient_id'] == patient_id]
-    
-    if patient_data.empty:
-        return False
-    
-    stored_hash = patient_data.iloc[0]['password_hash']
-    return stored_hash == hash_password(password)
-
 def login_admin(username, password):
     return username == ADMIN_USERNAME and hash_password(password) == ADMIN_PASSWORD_HASH
+
+def verify_patient(patient_id, patient_name):
+    """Verify patient exists with matching ID and Name (no password)"""
+    patients = st.session_state.patients
+    for patient in patients:
+        if patient['patient_id'] == patient_id and patient['name'].lower() == patient_name.lower():
+            return True, patient['name']
+    return False, None
 
 # ==================== FILE STORAGE FUNCTIONS ====================
 
@@ -164,7 +135,7 @@ init_session_state()
 
 # ==================== HELPER FUNCTIONS ====================
 
-def add_patient(patient_id, name, age, gender, contact, address, password):
+def add_patient(patient_id, name, age, gender, contact, address):
     new_patient = {
         'patient_id': patient_id,
         'name': name,
@@ -176,7 +147,6 @@ def add_patient(patient_id, name, age, gender, contact, address, password):
     }
     st.session_state.patients.append(new_patient)
     save_patients(st.session_state.patients)
-    save_patient_credentials(patient_id, password)
     return True
 
 def add_vitals(patient_id, bp_sys, bp_dia, heart_rate, blood_sugar, weight, notes=""):
@@ -257,6 +227,9 @@ def show_login_page():
         font-weight: 600;
         color: #1f6e4a;
     }
+    .stAlert {
+        border-radius: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -291,36 +264,35 @@ def show_login_page():
                     st.error("❌ Invalid admin credentials!")
         
         with tab2:
-            st.markdown("### 🔐 Patient Portal")
-            patient_id = st.text_input("Patient ID", key="patient_id", placeholder="Enter your Patient ID")
-            patient_password = st.text_input("Password", type="password", key="patient_pass", placeholder="Enter your password")
+            st.markdown("### 🔐 Patient Portal Access")
+            st.info("💡 **Login using your Patient ID and Full Name** (as registered)")
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🔐 Login as Patient", key="patient_login"):
-                    if verify_patient_credentials(patient_id, patient_password):
-                        # Verify patient exists
-                        patient_exists = any(p['patient_id'] == patient_id for p in st.session_state.patients)
-                        if patient_exists:
-                            st.session_state.logged_in = True
-                            st.session_state.user_type = "patient"
-                            st.session_state.current_patient_id = patient_id
-                            patient = next((p for p in st.session_state.patients if p['patient_id'] == patient_id), None)
-                            st.session_state.current_patient_name = patient['name'] if patient else patient_id
-                            st.rerun()
-                        else:
-                            st.error("❌ Patient ID not found!")
-                    else:
-                        st.error("❌ Invalid credentials!")
-            
+                patient_id = st.text_input("Patient ID", key="patient_id", placeholder="e.g., PAT001")
             with col2:
-                st.markdown("""
-                <div style="background: #f0f2f5; padding: 15px; border-radius: 10px; margin-top: 10px;">
-                    <small>⚠️ <strong>New Patient?</strong><br>
-                    Register using the admin panel.<br>
-                    You will create your password during registration.</small>
-                </div>
-                """, unsafe_allow_html=True)
+                patient_name = st.text_input("Full Name", key="patient_name", placeholder="Enter your registered name")
+            
+            if st.button("🔐 Access My Portal", key="patient_login"):
+                if patient_id and patient_name:
+                    valid, name = verify_patient(patient_id, patient_name)
+                    if valid:
+                        st.session_state.logged_in = True
+                        st.session_state.user_type = "patient"
+                        st.session_state.current_patient_id = patient_id
+                        st.session_state.current_patient_name = name
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid Patient ID or Name! Please check your credentials.")
+                else:
+                    st.warning("⚠️ Please enter both Patient ID and Name")
+            
+            st.markdown("""
+            <div style="background: #f0f2f5; padding: 15px; border-radius: 10px; margin-top: 15px;">
+                <small>⚠️ <strong>New Patient?</strong><br>
+                Register using the admin panel. After registration, use your <strong>Patient ID</strong> and <strong>Full Name</strong> to login.</small>
+            </div>
+            """, unsafe_allow_html=True)
         
         st.markdown("---")
         st.markdown("<center><small>© 2026 ICT in Health | Secure Hospital Management System</small></center>", unsafe_allow_html=True)
@@ -403,10 +375,9 @@ def show_admin_dashboard():
         with st.form("patient_registration"):
             col1, col2 = st.columns(2)
             with col1:
-                patient_id = st.text_input("Patient ID (Unique)")
+                patient_id = st.text_input("Patient ID (Unique)", placeholder="e.g., PAT001")
                 name = st.text_input("Full Name")
-                age = st.number_input("Age", min_value=0, max_value=150)
-                password = st.text_input("Create Patient Portal Password", type="password", help="Patient will use this to login")
+                age = st.number_input("Age", min_value=0, max_value=150, step=1)
             with col2:
                 gender = st.selectbox("Gender", ["Male", "Female", "Other"])
                 contact = st.text_input("Contact Number")
@@ -415,17 +386,17 @@ def show_admin_dashboard():
             submitted = st.form_submit_button("Register Patient")
             
             if submitted:
-                if patient_id and name and password:
+                if patient_id and name:
                     existing_ids = [p['patient_id'] for p in st.session_state.patients]
                     if patient_id in existing_ids:
                         st.error(f"❌ Patient ID {patient_id} already exists!")
                     else:
-                        add_patient(patient_id, name, age, gender, contact, address, password)
+                        add_patient(patient_id, name, age, gender, contact, address)
                         st.success(f"✅ Patient {name} registered successfully!")
-                        st.info(f"📝 Patient Portal Credentials:\n\n**Patient ID:** {patient_id}\n**Password:** [Hidden for security]")
+                        st.info(f"📝 **Login Credentials for Patient:**\n\n**Patient ID:** `{patient_id}`\n**Name:** {name}\n\nPatient can login using these credentials.")
                         st.balloons()
                 else:
-                    st.warning("Please fill all required fields (including password)")
+                    st.warning("Please fill all required fields (Patient ID and Name)")
         
         st.subheader("📋 Registered Patients")
         if st.session_state.patients:
@@ -709,7 +680,7 @@ def show_admin_dashboard():
         
         ### Access Levels:
         - **Admin**: View all patients, add/edit all data
-        - **Patient**: View only their own medical history
+        - **Patient**: View only their own medical history (using Patient ID + Name)
         
         ### Technologies Used:
         - Streamlit (Frontend)
@@ -894,6 +865,9 @@ def show_patient_portal():
         - ✅ Check your appointments
         - ✅ Download your health reports
         - ✅ Chat with our AI Health Assistant
+        
+        ### Login Information
+        You can login using your **Patient ID** and **Full Name** as registered.
         
         ### Privacy & Security
         Your data is stored securely and only you can access your records.
