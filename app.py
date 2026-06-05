@@ -170,7 +170,7 @@ menu = st.sidebar.selectbox(
     "Choose Module",
     ["🏠 Dashboard", "👨‍👩‍👧 Patient Registration", "📊 Vitals Logger", 
      "💊 Medication Manager", "📅 Appointments", "📈 Health Analytics", 
-     "📄 Reports", "💾 Backup/Restore", "🧠 Mental Health Chatbot", 
+     "📄 Reports", "💾 Backup/Restore", "AI Health Assistant", 
      "ℹ️ About ICT in Health"]
 )
 
