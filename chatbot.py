@@ -1,9 +1,10 @@
 """
-AI Health Assistant powered by Google Gemini (google-generativeai SDK)
+AI Health Assistant powered by Google Gemini (REST API - No SDK Issues)
 """
 
 import streamlit as st
 import os
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -73,100 +74,69 @@ def get_crisis_response():
 
 
 def get_gemini_response(user_message, chat_history):
-    """Call Gemini API using google-generativeai SDK"""
+    """Call Gemini API using REST (bypasses SDK issues)"""
 
     if not GOOGLE_API_KEY:
         return """### ⚙️ Gemini API Key Not Found
 
-To enable the AI assistant, add your Google Gemini API key:
+Add your Google Gemini API key in Streamlit Secrets.
 
 **On Streamlit Cloud:**
 1. Open your app → ⋮ menu → **Settings** → **Secrets**
-2. Add this line:
+2. Add: `GOOGLE_API_KEY = "your_api_key_here"`
+3. Get a FREE key: [aistudio.google.com](https://aistudio.google.com)"""
 
-**Get a FREE API key:** [aistudio.google.com](https://aistudio.google.com)
+    # Use the stable REST endpoint with working model
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={GOOGLE_API_KEY}"
 
-Once added, I can help with symptom education, exercise plans, diet advice, lifestyle changes, and much more!"""
+    # Build conversation history
+    history = []
+    for msg in chat_history[-10:]:
+        role = "user" if msg["role"] == "user" else "model"
+        history.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    # Add system instruction as first message
+    contents = [{"role": "user", "parts": [{"text": SYSTEM_PROMPT}]}] + history
+    contents.append({"role": "user", "parts": [{"text": user_message}]})
+
+    payload = {
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 1000,
+        }
+    }
 
     try:
-        import google.generativeai as genai
+        response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        elif response.status_code == 404:
+            return """### 🤖 Model Not Available
 
-        genai.configure(api_key=GOOGLE_API_KEY)
+Try changing the model name. Current working models:
+- `gemini-2.5-flash-lite`
+- `gemini-2.5-flash`
+- `gemini-2.5-pro`
 
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=SYSTEM_PROMPT,
-            generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 1000,
-            }
-        )
-
-        # Build history for multi-turn conversation
-        history = []
-        for msg in chat_history[-10:]:
-            role = "user" if msg["role"] == "user" else "model"
-            history.append({"role": role, "parts": [msg["content"]]})
-
-        chat = model.start_chat(history=history)
-        response = chat.send_message(user_message)
-        return response.text
-
-    except ImportError:
-        return """### ❌ Package Not Installed
-
-The `google-generativeai` package is missing. Make sure your `requirements.txt` contains:
-
-
-Then redeploy your Streamlit app."""
-
-    except Exception as e:
-        error_msg = str(e)
-
-        if "API_KEY" in error_msg or "api key" in error_msg.lower() or "invalid" in error_msg.lower():
-            return """### 🔑 Invalid API Key
-
-Your Gemini API key appears to be invalid or expired.
-
-**Fix:**
-1. Go to [aistudio.google.com](https://aistudio.google.com)
-2. Create a new API key
-3. Update it in your Streamlit Secrets
-
-Make sure there are no extra spaces or quotes around the key."""
-
-        elif "quota" in error_msg.lower() or "429" in error_msg:
+Your API key may need to be regenerated at [aistudio.google.com](https://aistudio.google.com)"""
+        elif response.status_code == 429:
             return """### ⏳ API Quota Exceeded
 
-You've hit the Gemini API rate limit. 
-
-**Options:**
-- Wait a minute and try again
-- Check your quota at [console.cloud.google.com](https://console.cloud.google.com)
-- The free tier allows ~60 requests/minute"""
-
-        elif "model" in error_msg.lower() and "not found" in error_msg.lower():
-            return f"""### 🤖 Model Not Available
-
-The requested model isn't available for your API key.
-
-**Error:** `{error_msg}`
-
-This usually resolves itself. Try again in a moment, or check that your API key has access to Gemini models at [aistudio.google.com](https://aistudio.google.com)."""
-
+You've hit the rate limit. Please wait a moment and try again."""
         else:
-            return f"""### ⚠️ Connection Error
+            return f"""### ⚠️ API Error: {response.status_code}
 
-Couldn't reach Gemini AI right now.
+{response.text}"""
+            
+    except Exception as e:
+        return f"""### ⚠️ Connection Error
 
-**Error details:** `{error_msg}`
+Couldn't reach Gemini API: {str(e)}
 
-**Things to try:**
-- Check your internet connection
-- Verify your API key in Streamlit Secrets
-- Wait a moment and try again
-
-For health info in the meantime, visit [mayoclinic.org](https://www.mayoclinic.org) or consult your doctor."""
+Please check your internet connection and try again."""
 
 
 def save_chat_history(patient_id, user_message, bot_response):
