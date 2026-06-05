@@ -120,7 +120,8 @@ def get_gemini_response(user_message, chat_history_context):
         
         # UPDATED: Use the correct model name (gemini-pro is deprecated)
         # gemini-1.5-flash is faster and works well for chat
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        model = genai.GenerativeModel('gemini-2.5-flash-preview')
         
         full_prompt = f"""{MENTAL_HEALTH_PROMPT}
 
