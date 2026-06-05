@@ -170,7 +170,7 @@ menu = st.sidebar.selectbox(
     "Choose Module",
     ["🏠 Dashboard", "👨‍👩‍👧 Patient Registration", "📊 Vitals Logger", 
      "💊 Medication Manager", "📅 Appointments", "📈 Health Analytics", 
-     "📄 Reports", "💾 Backup/Restore", "AI Health Assistant", 
+     "📄 Reports", "💾 Backup/Restore", "🤖 AI Health Assistant", 
      "ℹ️ About ICT in Health"]
 )
 
@@ -487,8 +487,8 @@ elif menu == "💾 Backup/Restore":
             st.success("✅ Data restored successfully! Refresh the page to see changes.")
             st.rerun()
 
-# ==================== MENTAL HEALTH CHATBOT ====================
-elif menu == "🧠 Mental Health Chatbot":
+# ==================== AI HEALTH ASSISTANT ====================
+elif menu == "🤖 AI Health Assistant":
     chatbot_ui()
 
 # ==================== ABOUT ====================
@@ -511,8 +511,8 @@ elif menu == "ℹ️ About ICT in Health":
     - CSV Files (Storage)
     - Plotly (Charts)
     - Pandas (Data manipulation)
-    - Google Gemini AI (Mental Health Chatbot)
+    - Google Gemini AI (Health Assistant Chatbot)
     """)
 
 st.sidebar.markdown("---")
-st.sidebar.success(f"✅ Data is PERSISTENT!\n\nYour data is saved to CSV files. Close and reopen - data stays!")
+st.sidebar.success(f"✅ Data is PERSISTENT!\n\nYour data is saved to CSV files. Close and reopen -
