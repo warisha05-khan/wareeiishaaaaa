@@ -1,5 +1,3 @@
-# Add this with your other imports
-from chatbot import chatbot_ui
 """
 ICT in Health - Hospital Management System with Persistent Storage
 Data saved to CSV files - never loses data!
@@ -12,6 +10,9 @@ import plotly.graph_objects as go
 from datetime import datetime
 import os
 import base64
+
+# Import chatbot module
+from chatbot import chatbot_ui
 
 # Page configuration
 st.set_page_config(
@@ -169,7 +170,8 @@ menu = st.sidebar.selectbox(
     "Choose Module",
     ["🏠 Dashboard", "👨‍👩‍👧 Patient Registration", "📊 Vitals Logger", 
      "💊 Medication Manager", "📅 Appointments", "📈 Health Analytics", 
-     "📄 Reports", "💾 Backup/Restore", "ℹ️ About ICT in Health"]
+     "📄 Reports", "💾 Backup/Restore", "🧠 Mental Health Chatbot", 
+     "ℹ️ About ICT in Health"]
 )
 
 # ==================== DASHBOARD ====================
@@ -269,7 +271,6 @@ elif menu == "📊 Vitals Logger":
     st.subheader("📋 Recent Vitals Records")
     if st.session_state.vitals:
         df_vitals = pd.DataFrame(st.session_state.vitals)
-        # Add patient names
         patient_names_dict = {p['patient_id']: p['name'] for p in st.session_state.patients}
         df_vitals['patient_name'] = df_vitals['patient_id'].map(patient_names_dict)
         st.dataframe(df_vitals[['date', 'patient_id', 'patient_name', 'bp_systolic', 'bp_diastolic', 'heart_rate', 'blood_sugar']], use_container_width=True)
@@ -351,7 +352,6 @@ elif menu == "📈 Health Analytics":
         df['date'] = pd.to_datetime(df['date'])
         df = df.sort_values('date')
         
-        # Patient selector for analytics
         patient_ids = list(set([v['patient_id'] for v in st.session_state.vitals]))
         if patient_ids:
             patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
@@ -359,7 +359,6 @@ elif menu == "📈 Health Analytics":
             df_patient = df[df['patient_id'] == selected_patient]
             
             if not df_patient.empty:
-                # BP Trends
                 st.subheader("❤️ Blood Pressure Trends")
                 fig_bp = go.Figure()
                 fig_bp.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_systolic'], name='Systolic', line=dict(color='red')))
@@ -480,7 +479,6 @@ elif menu == "💾 Backup/Restore":
             with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as zip_file:
                 zip_file.extractall(DATA_FOLDER)
             
-            # Reload data
             st.session_state.patients = load_patients()
             st.session_state.vitals = load_vitals()
             st.session_state.medications = load_medications()
@@ -488,6 +486,10 @@ elif menu == "💾 Backup/Restore":
             
             st.success("✅ Data restored successfully! Refresh the page to see changes.")
             st.rerun()
+
+# ==================== MENTAL HEALTH CHATBOT ====================
+elif menu == "🧠 Mental Health Chatbot":
+    chatbot_ui()
 
 # ==================== ABOUT ====================
 elif menu == "ℹ️ About ICT in Health":
@@ -509,6 +511,7 @@ elif menu == "ℹ️ About ICT in Health":
     - CSV Files (Storage)
     - Plotly (Charts)
     - Pandas (Data manipulation)
+    - Google Gemini AI (Mental Health Chatbot)
     """)
 
 st.sidebar.markdown("---")
