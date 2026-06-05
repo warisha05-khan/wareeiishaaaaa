@@ -1,518 +1,333 @@
 """
-ICT in Health - Hospital Management System with Persistent Storage
-Data saved to CSV files - never loses data!
+AI Health Assistant powered by Google Gemini (google-generativeai SDK)
 """
 
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime
 import os
-import base64
+from datetime import datetime
+from dotenv import load_dotenv
 
-# Import chatbot module
-from chatbot import chatbot_ui
+load_dotenv()
 
-# Page configuration
-st.set_page_config(
-    page_title="ICT Health | Hospital Management System",
-    page_icon="🏥",
-    layout="wide"
-)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# ==================== FILE STORAGE FUNCTIONS ====================
+# Emergency keywords - bypass AI entirely
+EMERGENCY_KEYWORDS = [
+    'chest pain', 'difficulty breathing', 'severe bleeding',
+    'loss of consciousness', 'severe head injury', 'stroke symptoms',
+    'severe allergic reaction', 'suicidal', 'want to die', 'heart attack',
+    "can't breathe", 'unconscious', 'seizure', 'not breathing',
+    'overdose', 'poisoning', 'severe burn', 'choking'
+]
 
-DATA_FOLDER = "hospital_data"
+SYSTEM_PROMPT = """You are an expert AI Health & Wellness Assistant. You are knowledgeable, warm, and empathetic.
 
-# Create data folder if it doesn't exist
-if not os.path.exists(DATA_FOLDER):
-    os.makedirs(DATA_FOLDER)
+YOUR CAPABILITIES:
+- Analyze symptoms and explain possible general causes (educational only)
+- Recommend appropriate exercises for health conditions or fitness goals
+- Provide detailed lifestyle change advice (sleep, stress, diet, habits)
+- Give nutrition and diet guidance
+- Explain medical terms and health concepts clearly
+- Provide mental wellness tips
+- Suggest when to see a doctor and what type of specialist
 
-# File paths
-PATIENTS_FILE = os.path.join(DATA_FOLDER, "patients.csv")
-VITALS_FILE = os.path.join(DATA_FOLDER, "vitals.csv")
-MEDICATIONS_FILE = os.path.join(DATA_FOLDER, "medications.csv")
-APPOINTMENTS_FILE = os.path.join(DATA_FOLDER, "appointments.csv")
+YOUR STRICT RULES (NEVER BREAK):
+1. NEVER diagnose any medical condition — always say "possible causes" or "commonly associated with"
+2. NEVER prescribe specific medications or dosages
+3. ALWAYS recommend consulting a doctor for persistent or serious symptoms
+4. ALWAYS end with a brief disclaimer that you provide educational info, not medical advice
+5. Be thorough and helpful — don't give vague one-line answers
+6. Use clear headings and organized formatting in responses
+7. For exercise recommendations, mention to consult a doctor first if they have health conditions
+8. Be culturally sensitive and inclusive in your advice
 
-def load_patients():
-    """Load patients from CSV file"""
-    if os.path.exists(PATIENTS_FILE):
-        df = pd.read_csv(PATIENTS_FILE)
-        return df.to_dict('records')
-    return []
+RESPONSE STYLE:
+- Use emojis sparingly for readability
+- Structure responses with clear sections using markdown
+- Be warm and encouraging, not clinical and cold
+- Give actionable, practical advice
+- Aim for 200-400 words per response"""
 
-def save_patients(patients):
-    """Save patients to CSV file"""
-    if patients:
-        df = pd.DataFrame(patients)
-        df.to_csv(PATIENTS_FILE, index=False)
-    elif os.path.exists(PATIENTS_FILE):
-        os.remove(PATIENTS_FILE)
 
-def load_vitals():
-    if os.path.exists(VITALS_FILE):
-        df = pd.read_csv(VITALS_FILE)
-        return df.to_dict('records')
-    return []
+def detect_emergency(text):
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in EMERGENCY_KEYWORDS)
 
-def save_vitals(vitals):
-    if vitals:
-        df = pd.DataFrame(vitals)
-        df.to_csv(VITALS_FILE, index=False)
-    elif os.path.exists(VITALS_FILE):
-        os.remove(VITALS_FILE)
 
-def load_medications():
-    if os.path.exists(MEDICATIONS_FILE):
-        df = pd.read_csv(MEDICATIONS_FILE)
-        return df.to_dict('records')
-    return []
+def get_crisis_response():
+    return """### 🚨 MEDICAL EMERGENCY DETECTED
 
-def save_medications(medications):
-    if medications:
-        df = pd.DataFrame(medications)
-        df.to_csv(MEDICATIONS_FILE, index=False)
-    elif os.path.exists(MEDICATIONS_FILE):
-        os.remove(MEDICATIONS_FILE)
+**Please seek immediate medical attention RIGHT NOW.**
 
-def load_appointments():
-    if os.path.exists(APPOINTMENTS_FILE):
-        df = pd.read_csv(APPOINTMENTS_FILE)
-        return df.to_dict('records')
-    return []
+📞 **Emergency Services:**
+- 🇵🇰 Pakistan: **115** (Rescue) / **1122** (Emergency) / **1021** (Edhi)
+- 🌍 International: **112**
+- 🇺🇸 US/Canada: **911**
+- 🇬🇧 UK: **999**
 
-def save_appointments(appointments):
-    if appointments:
-        df = pd.DataFrame(appointments)
-        df.to_csv(APPOINTMENTS_FILE, index=False)
-    elif os.path.exists(APPOINTMENTS_FILE):
-        os.remove(APPOINTMENTS_FILE)
+**Go to your nearest Emergency Room immediately.**
 
-# Initialize session state with data from files
-def init_session_state():
-    if 'patients' not in st.session_state:
-        st.session_state.patients = load_patients()
-    if 'vitals' not in st.session_state:
-        st.session_state.vitals = load_vitals()
-    if 'medications' not in st.session_state:
-        st.session_state.medications = load_medications()
-    if 'appointments' not in st.session_state:
-        st.session_state.appointments = load_appointments()
+⚠️ Do NOT rely on AI for emergencies. Close this and call for help now.
 
-init_session_state()
+**Mental Health Crisis (Pakistan):** 0311-7786264 (Umang helpline)"""
 
-# ==================== HELPER FUNCTIONS ====================
 
-def add_patient(patient_id, name, age, gender, contact, address):
-    new_patient = {
-        'patient_id': patient_id,
-        'name': name,
-        'age': age,
-        'gender': gender,
-        'contact': contact,
-        'address': address,
-        'registration_date': datetime.now().strftime("%Y-%m-%d %H:%M")
+def get_gemini_response(user_message, chat_history):
+    """Call Gemini API using google-generativeai SDK"""
+
+    if not GOOGLE_API_KEY:
+        return """### ⚙️ Gemini API Key Not Found
+
+To enable the AI assistant, add your Google Gemini API key:
+
+**On Streamlit Cloud:**
+1. Open your app → ⋮ menu → **Settings** → **Secrets**
+2. Add this line:
+
+**Get a FREE API key:** [aistudio.google.com](https://aistudio.google.com)
+
+Once added, I can help with symptom education, exercise plans, diet advice, lifestyle changes, and much more!"""
+
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=GOOGLE_API_KEY)
+
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=SYSTEM_PROMPT,
+            generation_config={
+                "temperature": 0.7,
+                "max_output_tokens": 1000,
+            }
+        )
+
+        # Build history for multi-turn conversation
+        history = []
+        for msg in chat_history[-10:]:
+            role = "user" if msg["role"] == "user" else "model"
+            history.append({"role": role, "parts": [msg["content"]]})
+
+        chat = model.start_chat(history=history)
+        response = chat.send_message(user_message)
+        return response.text
+
+    except ImportError:
+        return """### ❌ Package Not Installed
+
+The `google-generativeai` package is missing. Make sure your `requirements.txt` contains:
+
+
+Then redeploy your Streamlit app."""
+
+    except Exception as e:
+        error_msg = str(e)
+
+        if "API_KEY" in error_msg or "api key" in error_msg.lower() or "invalid" in error_msg.lower():
+            return """### 🔑 Invalid API Key
+
+Your Gemini API key appears to be invalid or expired.
+
+**Fix:**
+1. Go to [aistudio.google.com](https://aistudio.google.com)
+2. Create a new API key
+3. Update it in your Streamlit Secrets
+
+Make sure there are no extra spaces or quotes around the key."""
+
+        elif "quota" in error_msg.lower() or "429" in error_msg:
+            return """### ⏳ API Quota Exceeded
+
+You've hit the Gemini API rate limit. 
+
+**Options:**
+- Wait a minute and try again
+- Check your quota at [console.cloud.google.com](https://console.cloud.google.com)
+- The free tier allows ~60 requests/minute"""
+
+        elif "model" in error_msg.lower() and "not found" in error_msg.lower():
+            return f"""### 🤖 Model Not Available
+
+The requested model isn't available for your API key.
+
+**Error:** `{error_msg}`
+
+This usually resolves itself. Try again in a moment, or check that your API key has access to Gemini models at [aistudio.google.com](https://aistudio.google.com)."""
+
+        else:
+            return f"""### ⚠️ Connection Error
+
+Couldn't reach Gemini AI right now.
+
+**Error details:** `{error_msg}`
+
+**Things to try:**
+- Check your internet connection
+- Verify your API key in Streamlit Secrets
+- Wait a moment and try again
+
+For health info in the meantime, visit [mayoclinic.org](https://www.mayoclinic.org) or consult your doctor."""
+
+
+def save_chat_history(patient_id, user_message, bot_response):
+    """Save chat history to CSV"""
+    import pandas as pd
+
+    os.makedirs("hospital_data", exist_ok=True)
+    chat_file = f"hospital_data/chat_history_{patient_id}.csv"
+
+    new_entry = {
+        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'user_message': user_message[:500],
+        'bot_response': bot_response[:500]
     }
-    st.session_state.patients.append(new_patient)
-    save_patients(st.session_state.patients)
-    return True
 
-def add_vitals(patient_id, bp_sys, bp_dia, heart_rate, blood_sugar, weight, notes=""):
-    new_vital = {
-        'patient_id': patient_id,
-        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'bp_systolic': bp_sys,
-        'bp_diastolic': bp_dia,
-        'heart_rate': heart_rate,
-        'blood_sugar': blood_sugar,
-        'weight': weight,
-        'notes': notes
-    }
-    st.session_state.vitals.append(new_vital)
-    save_vitals(st.session_state.vitals)
-
-def add_medication(patient_id, med_name, dosage, frequency, start_date, end_date):
-    new_med = {
-        'patient_id': patient_id,
-        'med_name': med_name,
-        'dosage': dosage,
-        'frequency': frequency,
-        'start_date': start_date,
-        'end_date': end_date,
-        'status': 'active'
-    }
-    st.session_state.medications.append(new_med)
-    save_medications(st.session_state.medications)
-
-def add_appointment(patient_id, doctor, date_time, reason):
-    new_appointment = {
-        'patient_id': patient_id,
-        'doctor': doctor,
-        'date_time': date_time,
-        'reason': reason,
-        'status': 'scheduled'
-    }
-    st.session_state.appointments.append(new_appointment)
-    save_appointments(st.session_state.appointments)
-
-# ==================== MAIN UI ====================
-
-st.title("🏥 ICT in Health - Hospital Management System")
-st.markdown("*Persistent Storage - Your data is saved forever!*")
-
-# Display saved data count in sidebar
-st.sidebar.success(f"📊 Data Stats:\n\n👥 Patients: {len(st.session_state.patients)}\n📊 Vitals: {len(st.session_state.vitals)}\n💊 Medications: {len(st.session_state.medications)}")
-
-# Sidebar Navigation
-st.sidebar.title("📋 Navigation")
-menu = st.sidebar.selectbox(
-    "Choose Module",
-    ["🏠 Dashboard", "👨‍👩‍👧 Patient Registration", "📊 Vitals Logger", 
-     "💊 Medication Manager", "📅 Appointments", "📈 Health Analytics", 
-     "📄 Reports", "💾 Backup/Restore", "🤖 AI Health Assistant", 
-     "ℹ️ About ICT in Health"]
-)
-
-# ==================== DASHBOARD ====================
-if menu == "🏠 Dashboard":
-    st.header("📊 Hospital Dashboard")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("👥 Total Patients", len(st.session_state.patients))
-    with col2:
-        st.metric("📊 Vitals Records", len(st.session_state.vitals))
-    with col3:
-        active_meds = len([m for m in st.session_state.medications if m.get('status') == 'active'])
-        st.metric("💊 Active Medications", active_meds)
-    with col4:
-        st.metric("📅 Appointments", len(st.session_state.appointments))
-    
-    if st.session_state.patients:
-        st.subheader("📋 Recent Patients")
-        df_patients = pd.DataFrame(st.session_state.patients)
-        st.dataframe(df_patients[['patient_id', 'name', 'age', 'gender', 'registration_date']], use_container_width=True)
+    if os.path.exists(chat_file):
+        df = pd.read_csv(chat_file)
+        df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
     else:
-        st.info("No patients registered yet. Go to Patient Registration to add.")
+        df = pd.DataFrame([new_entry])
 
-# ==================== PATIENT REGISTRATION ====================
-elif menu == "👨‍👩‍👧 Patient Registration":
-    st.header("📝 Register New Patient")
-    
-    with st.form("patient_registration"):
-        col1, col2 = st.columns(2)
-        with col1:
-            patient_id = st.text_input("Patient ID (Unique)")
-            name = st.text_input("Full Name")
-            age = st.number_input("Age", min_value=0, max_value=150)
-        with col2:
-            gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-            contact = st.text_input("Contact Number")
-            address = st.text_area("Address")
-        
-        submitted = st.form_submit_button("Register Patient")
-        
-        if submitted:
-            if patient_id and name:
-                # Check if patient ID already exists
-                existing_ids = [p['patient_id'] for p in st.session_state.patients]
-                if patient_id in existing_ids:
-                    st.error(f"❌ Patient ID {patient_id} already exists!")
+    if len(df) > 100:
+        df = df.tail(100)
+
+    df.to_csv(chat_file, index=False)
+
+
+# Quick action prompts
+QUICK_PROMPTS = {
+    "🩺 Check Symptoms": "I want to describe my symptoms and learn about possible causes and what I should do.",
+    "🏃 Exercise Plan": "Recommend a beginner-friendly exercise routine. I'll tell you my goals and any conditions.",
+    "🥗 Diet & Nutrition": "Give me practical, evidence-based diet and nutrition advice for a healthier lifestyle.",
+    "💤 Sleep Problems": "I'm having trouble sleeping. Explain common causes and give me tips to improve sleep quality.",
+    "🧘 Stress & Anxiety": "Give me science-backed techniques to manage stress and anxiety in daily life.",
+    "❤️ Heart Health": "What lifestyle changes and habits improve cardiovascular health the most?",
+    "⚖️ Weight Management": "Give me healthy and sustainable weight management advice.",
+    "🌿 Healthy Habits": "Help me build a daily routine with healthy habits for energy, focus, and long-term wellness.",
+}
+
+
+def chatbot_ui():
+    """Main chatbot interface"""
+
+    st.subheader("🤖 AI Health & Wellness Assistant")
+    st.caption("Powered by Google Gemini • Educational information only, not medical advice")
+
+    # API status banner
+    if GOOGLE_API_KEY:
+        st.success("✅ Gemini AI connected — Ask me anything about health, symptoms, fitness, or lifestyle!")
+    else:
+        st.error("❌ Gemini API key missing — Add `GOOGLE_API_KEY` to your Streamlit Secrets to enable AI")
+
+    # Collapsible disclaimer
+    with st.expander("⚠️ Medical Disclaimer (click to read)", expanded=False):
+        st.warning("""
+        This AI assistant provides **general health information for educational purposes only**.
+
+        - ❌ Does **NOT** diagnose medical conditions  
+        - ❌ Does **NOT** prescribe medications or treatments  
+        - ✅ Provides **educational information** to help you understand health topics  
+        - ✅ Always **consult a qualified doctor** for medical advice  
+
+        🔴 **For emergencies, call 115 (Pakistan) or your local emergency number immediately.**
+        """)
+
+    # Patient selection
+    if st.session_state.get('patients'):
+        patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
+        selected_patient = st.selectbox(
+            "👤 Patient (optional — for saving chat history)",
+            ["Guest"] + [p['patient_id'] for p in st.session_state.patients],
+            format_func=lambda x: f"{x} — {patient_names[x]}" if x in patient_names else x
+        )
+    else:
+        selected_patient = "Guest"
+
+    # Initialize chat
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = [
+            {
+                "role": "assistant",
+                "content": """👋 **Welcome! I'm your AI Health & Wellness Assistant.**
+
+I can help you with:
+
+🩺 **Symptom Education** — Understand what your symptoms might mean  
+🏃 **Exercise Recommendations** — Plans tailored to your goals & health  
+🥗 **Nutrition & Diet** — Practical, science-backed eating advice  
+🧘 **Mental Wellness** — Stress, anxiety, sleep & mindfulness  
+❤️ **Lifestyle Changes** — Build sustainable healthy habits  
+
+**Use the quick buttons below** or just type your question freely.
+
+> ⚠️ I provide educational information only — not medical diagnosis or prescriptions.
+
+**What would you like to know today?**"""
+            }
+        ]
+
+    # Display chat history
+    for message in st.session_state.chat_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Quick action buttons
+    st.markdown("---")
+    st.caption("⚡ **Quick actions:**")
+    cols = st.columns(4)
+
+    for i, (label, prompt_text) in enumerate(QUICK_PROMPTS.items()):
+        with cols[i % 4]:
+            if st.button(label, key=f"quick_{i}", use_container_width=True):
+                st.session_state.chat_messages.append({"role": "user", "content": label})
+
+                if detect_emergency(prompt_text):
+                    response = get_crisis_response()
                 else:
-                    add_patient(patient_id, name, age, gender, contact, address)
-                    st.success(f"✅ Patient {name} registered successfully!")
-                    st.balloons()
-            else:
-                st.warning("Please fill all required fields")
-    
-    st.subheader("📋 Registered Patients")
-    if st.session_state.patients:
-        df_patients = pd.DataFrame(st.session_state.patients)
-        st.dataframe(df_patients, use_container_width=True)
-        
-        # Export button
-        csv = df_patients.to_csv(index=False)
-        b64 = base64.b64encode(csv.encode()).decode()
-        href = f'<a href="data:file/csv;base64,{b64}" download="patients_export.csv">📥 Export Patients to CSV</a>'
-        st.markdown(href, unsafe_allow_html=True)
-    else:
-        st.info("No patients registered yet")
+                    response = get_gemini_response(prompt_text, st.session_state.chat_messages[:-1])
 
-# ==================== VITALS LOGGER ====================
-elif menu == "📊 Vitals Logger":
-    st.header("🩺 Record Patient Vitals")
-    
-    if not st.session_state.patients:
-        st.warning("Please register patients first!")
-    else:
-        patient_ids = [p['patient_id'] for p in st.session_state.patients]
-        patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
-        
-        with st.form("vitals_form"):
-            selected_patient = st.selectbox("Select Patient", patient_ids, format_func=lambda x: f"{x} - {patient_names.get(x, '')}")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                bp_sys = st.number_input("Systolic BP (mmHg)", min_value=50, max_value=250, value=120)
-                bp_dia = st.number_input("Diastolic BP (mmHg)", min_value=30, max_value=150, value=80)
-            with col2:
-                heart_rate = st.number_input("Heart Rate (bpm)", min_value=30, max_value=200, value=75)
-                blood_sugar = st.number_input("Blood Sugar (mg/dL)", min_value=0, max_value=600, value=100)
-            with col3:
-                weight = st.number_input("Weight (kg)", min_value=0, max_value=300, value=70)
-            notes = st.text_area("Additional Notes")
-            
-            submitted = st.form_submit_button("Save Vitals")
-            
-            if submitted:
-                add_vitals(selected_patient, bp_sys, bp_dia, heart_rate, blood_sugar, weight, notes)
-                st.success("✅ Vitals recorded successfully!")
-    
-    st.subheader("📋 Recent Vitals Records")
-    if st.session_state.vitals:
-        df_vitals = pd.DataFrame(st.session_state.vitals)
-        patient_names_dict = {p['patient_id']: p['name'] for p in st.session_state.patients}
-        df_vitals['patient_name'] = df_vitals['patient_id'].map(patient_names_dict)
-        st.dataframe(df_vitals[['date', 'patient_id', 'patient_name', 'bp_systolic', 'bp_diastolic', 'heart_rate', 'blood_sugar']], use_container_width=True)
-    else:
-        st.info("No vitals recorded yet")
+                st.session_state.chat_messages.append({"role": "assistant", "content": response})
 
-# ==================== MEDICATION MANAGER ====================
-elif menu == "💊 Medication Manager":
-    st.header("💊 Prescription & Medication Tracker")
-    
-    if not st.session_state.patients:
-        st.warning("Please register patients first!")
-    else:
-        patient_ids = [p['patient_id'] for p in st.session_state.patients]
-        patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
-        
-        with st.form("medication_form"):
-            selected_patient = st.selectbox("Select Patient", patient_ids, format_func=lambda x: f"{x} - {patient_names.get(x, '')}")
-            med_name = st.text_input("Medication Name")
-            dosage = st.text_input("Dosage (e.g., 500mg twice daily)")
-            frequency = st.selectbox("Frequency", ["Once daily", "Twice daily", "Three times daily", "Weekly"])
-            col1, col2 = st.columns(2)
-            with col1:
-                start_date = st.date_input("Start Date")
-            with col2:
-                end_date = st.date_input("End Date")
-            
-            submitted = st.form_submit_button("Add Prescription")
-            
-            if submitted and med_name:
-                add_medication(selected_patient, med_name, dosage, frequency, str(start_date), str(end_date))
-                st.success(f"✅ {med_name} prescribed successfully!")
-        
-        st.subheader("💊 Active Prescriptions")
-        active_meds = [m for m in st.session_state.medications if m.get('status') == 'active']
-        if active_meds:
-            df_meds = pd.DataFrame(active_meds)
-            df_meds['patient_name'] = df_meds['patient_id'].map(patient_names)
-            st.dataframe(df_meds[['patient_id', 'patient_name', 'med_name', 'dosage', 'frequency', 'start_date', 'end_date']], use_container_width=True)
-        else:
-            st.info("No active prescriptions")
+                if selected_patient != "Guest":
+                    save_chat_history(selected_patient, label, response)
 
-# ==================== APPOINTMENTS ====================
-elif menu == "📅 Appointments":
-    st.header("📅 Schedule Appointments")
-    
-    if not st.session_state.patients:
-        st.warning("Please register patients first!")
-    else:
-        patient_ids = [p['patient_id'] for p in st.session_state.patients]
-        patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
-        
-        with st.form("appointment_form"):
-            selected_patient = st.selectbox("Select Patient", patient_ids, format_func=lambda x: f"{x} - {patient_names.get(x, '')}")
-            doctor = st.text_input("Doctor Name")
-            appointment_date = st.datetime_input("Appointment Date & Time")
-            reason = st.text_area("Reason for Visit")
-            
-            submitted = st.form_submit_button("Schedule Appointment")
-            
-            if submitted:
-                add_appointment(selected_patient, doctor, str(appointment_date), reason)
-                st.success(f"✅ Appointment scheduled for {appointment_date}")
-        
-        st.subheader("📋 Upcoming Appointments")
-        if st.session_state.appointments:
-            df_appointments = pd.DataFrame(st.session_state.appointments)
-            df_appointments['patient_name'] = df_appointments['patient_id'].map(patient_names)
-            st.dataframe(df_appointments[['date_time', 'patient_id', 'patient_name', 'doctor', 'reason', 'status']], use_container_width=True)
-        else:
-            st.info("No appointments scheduled")
+                st.rerun()
 
-# ==================== HEALTH ANALYTICS ====================
-elif menu == "📈 Health Analytics":
-    st.header("📊 Health Trends Analytics")
-    
-    if st.session_state.vitals:
-        df = pd.DataFrame(st.session_state.vitals)
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.sort_values('date')
-        
-        patient_ids = list(set([v['patient_id'] for v in st.session_state.vitals]))
-        if patient_ids:
-            patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
-            selected_patient = st.selectbox("Select Patient for Analytics", patient_ids, format_func=lambda x: f"{x} - {patient_names.get(x, '')}")
-            df_patient = df[df['patient_id'] == selected_patient]
-            
-            if not df_patient.empty:
-                st.subheader("❤️ Blood Pressure Trends")
-                fig_bp = go.Figure()
-                fig_bp.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_systolic'], name='Systolic', line=dict(color='red')))
-                fig_bp.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_diastolic'], name='Diastolic', line=dict(color='blue')))
-                fig_bp.update_layout(title="Blood Pressure Over Time", xaxis_title="Date", yaxis_title="mmHg")
-                st.plotly_chart(fig_bp, use_container_width=True)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    fig_hr = px.line(df_patient, x='date', y='heart_rate', title="Heart Rate Trend")
-                    st.plotly_chart(fig_hr, use_container_width=True)
-                with col2:
-                    fig_sugar = px.line(df_patient, x='date', y='blood_sugar', title="Blood Sugar Trend")
-                    st.plotly_chart(fig_sugar, use_container_width=True)
-    else:
-        st.warning("No vitals data available for analytics")
+    st.markdown("---")
 
-# ==================== REPORTS ====================
-elif menu == "📄 Reports":
-    st.header("📄 Generate Patient Health Reports")
-    
-    if not st.session_state.patients:
-        st.warning("No patients registered")
-    else:
-        patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
-        selected_patient = st.selectbox("Select Patient", [p['patient_id'] for p in st.session_state.patients], format_func=lambda x: f"{x} - {patient_names.get(x, '')}")
-        
-        if st.button("📋 Generate Complete Health Report"):
-            patient = next((p for p in st.session_state.patients if p['patient_id'] == selected_patient), None)
-            patient_vitals = [v for v in st.session_state.vitals if v['patient_id'] == selected_patient]
-            patient_meds = [m for m in st.session_state.medications if m['patient_id'] == selected_patient]
-            
-            report = f"""
-            ========================================
-            ICT IN HEALTH - PATIENT HEALTH REPORT
-            ========================================
-            
-            PATIENT INFORMATION
-            -------------------
-            Patient ID: {selected_patient}
-            Name: {patient.get('name', 'N/A')}
-            Age: {patient.get('age', 'N/A')}
-            Gender: {patient.get('gender', 'N/A')}
-            Contact: {patient.get('contact', 'N/A')}
-            Registration Date: {patient.get('registration_date', 'N/A')}
-            
-            VITAL SIGNS HISTORY
-            -------------------
-            """
-            
-            for v in patient_vitals[-5:]:
-                report += f"""
-            Date: {v['date']}
-            - Blood Pressure: {v['bp_systolic']}/{v['bp_diastolic']} mmHg
-            - Heart Rate: {v['heart_rate']} bpm
-            - Blood Sugar: {v['blood_sugar']} mg/dL
-            - Weight: {v['weight']} kg
-            """
-            
-            report += f"""
-            
-            CURRENT MEDICATIONS
-            -------------------
-            """
-            for m in patient_meds:
-                report += f"""
-            - {m['med_name']}: {m['dosage']} ({m['frequency']})
-              Duration: {m['start_date']} to {m['end_date']}
-            """
-            
-            report += f"""
-            
-            ========================================
-            Report Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-            ========================================
-            """
-            
-            st.text_area("Report Preview", report, height=400)
-            
-            b64 = base64.b64encode(report.encode()).decode()
-            href = f'<a href="data:text/plain;base64,{b64}" download="patient_report_{selected_patient}.txt">📥 Download Report (TXT)</a>'
-            st.markdown(href, unsafe_allow_html=True)
-            
-            st.success("✅ Report generated successfully!")
+    # Chat input
+    if prompt := st.chat_input("Ask about symptoms, exercises, diet, mental health, lifestyle..."):
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
 
-# ==================== BACKUP/RESTORE ====================
-elif menu == "💾 Backup/Restore":
-    st.header("💾 Backup & Restore Data")
-    
-    st.info("Your data is automatically saved to CSV files. Use this section to backup or restore.")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📤 Backup Data")
-        if st.button("Create Backup ZIP"):
-            import zipfile
-            import io
-            
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-                for file in os.listdir(DATA_FOLDER):
-                    file_path = os.path.join(DATA_FOLDER, file)
-                    zip_file.write(file_path, file)
-            
-            b64 = base64.b64encode(zip_buffer.getvalue()).decode()
-            href = f'<a href="data:application/zip;base64,{b64}" download="hospital_data_backup.zip">📥 Download Backup ZIP</a>'
-            st.markdown(href, unsafe_allow_html=True)
-            st.success("Backup created!")
-    
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                if detect_emergency(prompt):
+                    response = get_crisis_response()
+                else:
+                    response = get_gemini_response(prompt, st.session_state.chat_messages[:-1])
+            st.markdown(response)
+
+        st.session_state.chat_messages.append({"role": "assistant", "content": response})
+
+        if selected_patient != "Guest":
+            save_chat_history(selected_patient, prompt, response)
+
+    # Clear button
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.subheader("📥 Restore Data")
-        uploaded_file = st.file_uploader("Upload Backup ZIP", type=['zip'])
-        if uploaded_file:
-            import zipfile
-            import io
-            
-            with zipfile.ZipFile(io.BytesIO(uploaded_file.read()), 'r') as zip_file:
-                zip_file.extractall(DATA_FOLDER)
-            
-            st.session_state.patients = load_patients()
-            st.session_state.vitals = load_vitals()
-            st.session_state.medications = load_medications()
-            st.session_state.appointments = load_appointments()
-            
-            st.success("✅ Data restored successfully! Refresh the page to see changes.")
+        if st.button("🗑️ Clear Conversation", use_container_width=True):
+            st.session_state.chat_messages = [
+                {"role": "assistant", "content": "Conversation cleared! How can I help with your health and wellness today?"}
+            ]
             st.rerun()
 
-# ==================== AI HEALTH ASSISTANT ====================
-elif menu == "🤖 AI Health Assistant":
-    chatbot_ui()
-
-# ==================== ABOUT ====================
-elif menu == "ℹ️ About ICT in Health":
-    st.header("🌐 Information & Communication Technology (ICT) in Health")
-    
     st.markdown("""
-    ### What is ICT in Health?
-    
-    ICT in Health (eHealth/Digital Health) uses technology for health-related purposes.
-    
-    ### Persistent Storage Features:
-    - ✅ **Data never disappears** - Saved to CSV files
-    - ✅ **Backup & Restore** - Export/Import your data
-    - ✅ **Works on Streamlit Cloud** - Files persist between sessions
-    - ✅ **No external database needed** - Everything works out of the box
-    
-    ### Technologies Used:
-    - Streamlit (Frontend)
-    - CSV Files (Storage)
-    - Plotly (Charts)
-    - Pandas (Data manipulation)
-    - Google Gemini AI (Health Assistant Chatbot)
-    """)
-
-st.sidebar.markdown("---")
-st.sidebar.success(f"✅ Data is PERSISTENT!\n\nYour data is saved to CSV files. Close and reopen -
+    <div style="background:#f0f2f5;padding:12px 15px;border-radius:10px;font-size:0.78rem;margin-top:8px;">
+    ⚠️ <strong>Disclaimer:</strong> Educational information only — not medical diagnosis or advice.
+    🔴 <strong>Emergencies: Call 115 or 1122 (Pakistan) immediately.</strong>
+    </div>
+    """, unsafe_allow_html=True)
