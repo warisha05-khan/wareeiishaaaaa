@@ -48,22 +48,26 @@ st.markdown("""
     }
     
     /* Sidebar navigation buttons */
-    .nav-button {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 12px 16px;
-        margin: 5px 10px;
-        background: rgba(255,255,255,0.08);
-        border-radius: 12px;
-        color: white;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        border: none;
-        width: calc(100% - 20px);
-        text-align: left;
-    }
+    [data-testid="stSidebar"] .stButton > button {
+    background: rgba(255,255,255,0.08) !important;
+    color: white !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
+    border-radius: 12px !important;
+    font-weight: 500 !important;
+    transition: all 0.3s ease !important;
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,255,255,0.18) !important;
+    border-color: #ffd700 !important;
+    transform: translateX(4px) !important;
+}
+
+[data-testid="stSidebar"] .stButton > button:focus {
+    background: linear-gradient(135deg, #2d8c5a, #1f6e4a) !important;
+    border-left: 3px solid #ffd700 !important;
+    box-shadow: none !important;
+}
     
     .nav-button:hover {
         background: rgba(255,255,255,0.2);
@@ -114,13 +118,14 @@ st.markdown("""
     }
     
     /* Stats in sidebar */
-    .stat-card {
-        background: rgba(255,255,255,0.08);
-        border-radius: 12px;
-        padding: 10px;
-        margin: 8px 10px;
-        text-align: center;
-    }
+.stat-card {
+    background: rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 10px;
+    margin: 8px 10px;
+    text-align: center;
+    border-left: 3px solid #ffd700;  /* ADD THIS LINE */
+}
     
     .stat-number {
         font-size: 1.5rem;
