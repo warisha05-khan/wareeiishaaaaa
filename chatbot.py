@@ -9,16 +9,11 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables (works for both local and cloud)
 load_dotenv()
 
-# Configure Gemini API
+# Get API key (don't configure yet - wait until needed)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
-else:
-    st.error("⚠️ Google API Key not found! Please add GOOGLE_API_KEY to your .env file")
 
 # Crisis keywords for emergency detection
 CRISIS_KEYWORDS = [
@@ -77,12 +72,15 @@ def save_chat_history(patient_id, user_message, bot_response):
     import pandas as pd
     import os
     
+    # Ensure folder exists
+    os.makedirs("hospital_data", exist_ok=True)
+    
     chat_file = f"hospital_data/chat_history_{patient_id}.csv"
     
     new_entry = {
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'user_message': user_message,
-        'bot_response': bot_response[:200]  # Truncate for storage
+        'bot_response': bot_response[:200]
     }
     
     if os.path.exists(chat_file):
@@ -91,7 +89,6 @@ def save_chat_history(patient_id, user_message, bot_response):
     else:
         df = pd.DataFrame([new_entry])
     
-    # Keep only last 100 messages per patient
     if len(df) > 100:
         df = df.tail(100)
     
@@ -113,14 +110,18 @@ def load_chat_history(patient_id):
 def get_gemini_response(user_message, chat_history_context):
     """Get empathetic response from Gemini API"""
     
+    # Check if API key is available
     if not GOOGLE_API_KEY:
-        return "⚠️ Chatbot is not configured. Please set up the Google API key in the .env file."
+        return "⚠️ Chatbot is not configured. Please add your Google API key in Streamlit Cloud Settings → Secrets.\n\nFormat: `GOOGLE_API_KEY = \"your_key_here\"`"
     
     # Check for crisis first
     if detect_crisis(user_message):
         return CRISIS_RESPONSE
     
     try:
+        # Configure Gemini with the API key (do it here, not at module level)
+        genai.configure(api_key=GOOGLE_API_KEY)
+        
         # Initialize the model
         model = genai.GenerativeModel('gemini-pro')
         
@@ -140,42 +141,32 @@ Respond as a caring mental health support assistant:"""
         return response.text
         
     except Exception as e:
-        return f"I'm having trouble connecting right now. Please try again in a moment. (Error: {str(e)})"
+        return f"I'm having trouble connecting right now. Please try again in a moment.\n\nError: {str(e)}"
 
 
 def chatbot_ui():
     """Display the chatbot interface in Streamlit"""
     
-    st.markdown("""
-    <style>
-    .chat-message {
-        padding: 10px;
-        border-radius: 20px;
-        margin: 5px 0;
-        max-width: 80%;
-    }
-    .user-message {
-        background-color: #1f6e4a;
-        color: white;
-        float: right;
-        text-align: right;
-    }
-    .bot-message {
-        background-color: #f0f2f5;
-        color: black;
-        float: left;
-    }
-    .disclaimer {
-        font-size: 0.7rem;
-        color: #666;
-        text-align: center;
-        margin-top: 20px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     st.subheader("🧠 Mental Health Support Chatbot")
     st.caption("I'm here to listen and support. This is a safe, non-judgmental space.")
+    
+    # Check if API key is configured and show status
+    if GOOGLE_API_KEY:
+        st.success("✅ Chatbot is ready! I'm here to listen and support you.")
+    else:
+        st.error("""
+        ### ⚠️ Chatbot Not Configured
+        
+        To use the mental health chatbot, you need to add your Google Gemini API key:
+        
+        1. Go to your app on **Streamlit Cloud**
+        2. Click **Settings** → **Secrets**
+        3. Add: `GOOGLE_API_KEY = "your_actual_api_key_here"`
+        4. Click **Save**
+        
+        The chatbot will work immediately after saving.
+        """)
+        return  # Stop here - don't show chat interface without API key
     
     # Patient selection for chat history
     if st.session_state.patients:
@@ -187,7 +178,7 @@ def chatbot_ui():
         )
     else:
         selected_patient = "Guest (no history save)"
-        st.info("Register a patient to save chat history.")
+        st.info("Register a patient to save chat history across sessions.")
     
     # Initialize session state for chat messages
     if "chat_messages" not in st.session_state:
@@ -195,20 +186,26 @@ def chatbot_ui():
     
     # Load previous chat history if patient selected
     if selected_patient != "Guest (no history save)":
-        if st.button("📜 Load Previous Chats"):
-            history = load_chat_history(selected_patient)
-            if history:
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📜 Load Previous Chats", use_container_width=True):
+                history = load_chat_history(selected_patient)
+                if history:
+                    st.session_state.chat_messages = []
+                    for entry in history:
+                        st.session_state.chat_messages.append({"role": "user", "content": entry['user_message']})
+                        st.session_state.chat_messages.append({"role": "assistant", "content": entry['bot_response']})
+                    st.success(f"Loaded {len(history)} previous conversations")
+                    st.rerun()
+                else:
+                    st.info("No previous chat history found")
+        with col2:
+            if st.button("🗑️ Clear Chat", use_container_width=True):
                 st.session_state.chat_messages = []
-                for entry in history:
-                    st.session_state.chat_messages.append({"role": "user", "content": entry['user_message']})
-                    st.session_state.chat_messages.append({"role": "assistant", "content": entry['bot_response']})
-                st.success(f"Loaded {len(history)} previous conversations")
                 st.rerun()
-            else:
-                st.info("No previous chat history found for this patient")
     
     # Display disclaimer
-    st.info("💡 **Remember**: I'm an AI support companion, not a replacement for professional mental health care. For emergencies, please contact crisis services.")
+    st.info("💡 **Remember**: I'm an AI support companion, not a replacement for professional mental health care.")
     
     # Display chat messages
     for message in st.session_state.chat_messages:
@@ -218,12 +215,12 @@ def chatbot_ui():
     # Chat input
     if prompt := st.chat_input("How are you feeling today? I'm here to listen..."):
         
-        # Add user message to chat
+        # Add user message
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Prepare context from last 5 exchanges
+        # Prepare context from last exchanges
         context = ""
         for msg in st.session_state.chat_messages[-6:]:
             context += f"{msg['role']}: {msg['content']}\n"
@@ -234,16 +231,16 @@ def chatbot_ui():
                 response = get_gemini_response(prompt, context)
                 st.markdown(response)
         
-        # Add bot response to chat
+        # Add bot response
         st.session_state.chat_messages.append({"role": "assistant", "content": response})
         
-        # Save to history if patient selected
+        # Save to history
         if selected_patient != "Guest (no history save)":
             save_chat_history(selected_patient, prompt, response)
     
     # Quick action buttons
     st.markdown("---")
-    st.caption("**Quick coping strategies:**")
+    st.markdown("**Quick coping strategies:**")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -254,7 +251,7 @@ def chatbot_ui():
 2. Hold your breath for **7 seconds**
 3. Exhale slowly through your mouth for **8 seconds**
 
-Repeat 4 times. This activates your parasympathetic nervous system and reduces stress. How do you feel after trying it?"""
+Repeat 4 times. This activates your parasympathetic nervous system and reduces stress."""
             st.session_state.chat_messages.append({"role": "assistant", "content": breathing_response})
             st.rerun()
     
@@ -262,14 +259,14 @@ Repeat 4 times. This activates your parasympathetic nervous system and reduces s
         if st.button("🌿 Grounding Exercise", use_container_width=True):
             grounding_response = """**5-4-3-2-1 Grounding Technique**
 
-- **5** things you can SEE around you
+- **5** things you can SEE
 - **4** things you can TOUCH
 - **3** things you can HEAR
 - **2** things you can SMELL
 - **1** thing you can TASTE
 
-This brings you to the present moment. Name them out loud or write them down."""
-            st.session_state.chat_messages.append({"assistant": "assistant", "content": grounding_response})
+This brings you to the present moment."""
+            st.session_state.chat_messages.append({"role": "assistant", "content": grounding_response})
             st.rerun()
     
     with col3:
@@ -278,20 +275,6 @@ This brings you to the present moment. Name them out loud or write them down."""
 
 "Today, I feel... because..."
 
-Write freely for 5 minutes. Don't edit or judge - just let your thoughts flow. Journaling helps process emotions and reduce anxiety."""
+Write freely for 5 minutes without judgment."""
             st.session_state.chat_messages.append({"role": "assistant", "content": journal_response})
             st.rerun()
-    
-    # Clear chat button
-    if st.button("🗑️ Clear Current Conversation", use_container_width=True):
-        st.session_state.chat_messages = []
-        st.rerun()
-    
-    # Disclaimer
-    st.markdown("""
-    <div class="disclaimer">
-    ⚠️ This chatbot is for emotional support and information only. It is not a substitute for 
-    professional medical advice, diagnosis, or treatment. If you're experiencing a mental health 
-    emergency, please contact emergency services or a crisis helpline immediately.
-    </div>
-    """, unsafe_allow_html=True)
