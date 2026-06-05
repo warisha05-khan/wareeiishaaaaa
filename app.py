@@ -1,3 +1,5 @@
+# Add this with your other imports
+from chatbot import chatbot_ui
 """
 ICT in Health - Hospital Management System with Persistent Storage
 Data saved to CSV files - never loses data!
