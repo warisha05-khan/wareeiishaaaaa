@@ -1,7 +1,7 @@
 """
 ICT in Health - Hospital Management System
 With Secure Login: Admin Portal + Patient Portal (ID + Name only)
-Beautiful Sidebar Navigation - High Contrast Readable Text
+Beautiful Sidebar Navigation - All features visible
 """
 
 import streamlit as st
@@ -30,13 +30,12 @@ st.markdown("""
 <style>
     /* Sidebar styling */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #e8f5e9 0%, #c8e6d9 100%);
+        background: linear-gradient(180deg, #0f2b1f 0%, #1a4a2a 100%);
         padding-top: 20px;
     }
     
-    /* Sidebar navigation buttons container */
-    .nav-container {
-        margin: 10px 0;
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+        color: white;
     }
     
     /* Sidebar navigation buttons */
@@ -45,37 +44,34 @@ st.markdown("""
         align-items: center;
         gap: 12px;
         padding: 12px 16px;
-        margin: 6px 12px;
-        background: #ffffff;
+        margin: 5px 10px;
+        background: rgba(255,255,255,0.08);
         border-radius: 12px;
-        color: #1a4a2a !important;
-        font-weight: 600;
+        color: white;
+        font-weight: 500;
         cursor: pointer;
         transition: all 0.3s ease;
-        border: 1px solid #c8e6d9;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: none;
+        width: calc(100% - 20px);
+        text-align: left;
     }
     
     .nav-button:hover {
-        background: #1f6e4a;
-        color: white !important;
+        background: rgba(255,255,255,0.2);
         transform: translateX(5px);
-        border-color: #1f6e4a;
     }
     
     .nav-button-active {
-        background: linear-gradient(135deg, #1f6e4a 0%, #0f533a 100%);
-        color: white !important;
+        background: linear-gradient(135deg, #2d8c5a 0%, #1f6e4a 100%);
         border-left: 4px solid #ffd700;
-        border-color: #1f6e4a;
     }
     
     /* Sidebar header */
     .sidebar-header {
         text-align: center;
         padding: 20px 15px;
-        background: linear-gradient(135deg, #1f6e4a 0%, #0f533a 100%);
-        margin: -20px -0px 20px -0px;
+        border-bottom: 1px solid rgba(255,255,255,0.2);
+        margin-bottom: 20px;
     }
     
     .sidebar-header h1 {
@@ -85,18 +81,17 @@ st.markdown("""
     }
     
     .sidebar-header p {
-        color: #c8e6d9;
+        color: #a0c4b0;
         font-size: 0.7rem;
     }
     
     /* User info card */
     .user-card {
-        background: linear-gradient(135deg, #1f6e4a 0%, #0f533a 100%);
+        background: rgba(255,255,255,0.1);
         border-radius: 15px;
         padding: 15px;
-        margin: 15px 12px;
+        margin: 15px 10px;
         text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     
     .user-card h4 {
@@ -105,54 +100,42 @@ st.markdown("""
     }
     
     .user-card p {
-        color: #c8e6d9;
+        color: #c0e0d0;
         font-size: 0.8rem;
     }
     
     /* Stats in sidebar */
     .stat-card {
-        background: white;
+        background: rgba(255,255,255,0.08);
         border-radius: 12px;
-        padding: 12px;
-        margin: 8px 12px;
+        padding: 10px;
+        margin: 8px 10px;
         text-align: center;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-        border: 1px solid #c8e6d9;
     }
     
     .stat-number {
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         font-weight: bold;
-        color: #1f6e4a;
+        color: #ffd700;
     }
     
     .stat-label {
         font-size: 0.7rem;
-        color: #4a6a5a;
-        font-weight: 500;
-    }
-    
-    /* Section title in sidebar */
-    .section-title {
-        margin: 20px 0 10px 15px;
-        color: #1f6e4a;
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 1px;
+        color: #c0e0d0;
     }
     
     /* Logout button */
     .logout-btn {
         background: #dc2626;
-        color: white !important;
+        color: white;
         border: none;
         border-radius: 12px;
         padding: 12px;
-        margin: 20px 12px;
+        margin: 20px 10px;
+        width: calc(100% - 20px);
         font-weight: bold;
         cursor: pointer;
         transition: all 0.3s ease;
-        text-align: center;
     }
     
     .logout-btn:hover {
@@ -177,12 +160,10 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         transition: transform 0.3s ease;
-        border: 1px solid #c8e6d9;
     }
     
     .metric-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
     }
     
     .metric-value {
@@ -193,20 +174,7 @@ st.markdown("""
     
     .metric-label {
         font-size: 0.85rem;
-        color: #4a6a5a;
-        font-weight: 500;
-    }
-    
-    /* Form styling */
-    .stTextInput input, .stNumberInput input, .stSelectbox select, .stTextArea textarea {
-        border-radius: 10px;
-        border: 1px solid #c8e6d9;
-    }
-    
-    /* Dataframe styling */
-    .dataframe {
-        border-radius: 12px;
-        overflow: hidden;
+        color: #666;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -451,7 +419,7 @@ def show_login_page():
 # ==================== SIDEBAR NAVIGATION ====================
 
 def render_sidebar():
-    """Render beautiful sidebar with visible navigation buttons"""
+    """Render beautiful sidebar with navigation buttons"""
     
     with st.sidebar:
         # Header
@@ -462,16 +430,16 @@ def render_sidebar():
         </div>
         """, unsafe_allow_html=True)
         
-        # User info card
+        # User info
         if st.session_state.user_type == "admin":
             st.markdown("""
             <div class="user-card">
-                <h4>👨‍💼 Admin User</h4>
-                <p>Full Access • All Records</p>
+                <h4>👨‍💼 Admin</h4>
+                <p>Full Access</p>
             </div>
             """, unsafe_allow_html=True)
             
-            # Stats cards for admin
+            # Stats for admin
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-number">{len(st.session_state.patients)}</div>
@@ -487,9 +455,9 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown('<div class="section-title">📋 MAIN MENU</div>', unsafe_allow_html=True)
+            st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 MAIN MENU</div>", unsafe_allow_html=True)
             
-            # Admin menu items with dark readable text
+            # Admin menu items
             menu_items = [
                 "📊 Dashboard", "👨‍👩‍👧 Register Patient", "🩺 Record Vitals",
                 "💊 Medications", "📅 Appointments", "📈 Analytics",
@@ -517,7 +485,7 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown('<div class="section-title">📋 YOUR PORTAL</div>', unsafe_allow_html=True)
+            st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 YOUR PORTAL</div>", unsafe_allow_html=True)
             
             # Patient menu items
             menu_items = [
@@ -526,17 +494,15 @@ def render_sidebar():
                 "🤖 AI Assistant", "ℹ️ About"
             ]
         
-        # Render menu buttons with proper styling
+        # Render menu buttons
         for item in menu_items:
             is_active = st.session_state.selected_menu == item
             active_class = "nav-button-active" if is_active else ""
             
-            # Using columns for better visual
-            col1, col2 = st.columns([1, 8])
-            with col2:
-                if st.button(item, key=f"sidebar_{item}", use_container_width=True):
-                    st.session_state.selected_menu = item
-                    st.rerun()
+            # Create clickable button
+            if st.button(item, key=f"sidebar_{item}", use_container_width=True):
+                st.session_state.selected_menu = item
+                st.rerun()
         
         # Logout button
         st.markdown("---")
@@ -546,7 +512,7 @@ def render_sidebar():
         # Footer
         st.markdown("""
         <div style="text-align: center; padding: 20px 10px; margin-top: 20px;">
-            <small style="color: #4a6a5a;">© 2026 ICT Health<br>Secure Hospital System</small>
+            <small style="color: #a0c4b0;">© 2026 ICT Health<br>Secure Hospital System</small>
         </div>
         """, unsafe_allow_html=True)
 
@@ -561,6 +527,7 @@ def show_admin_dashboard():
     menu = st.session_state.selected_menu
     
     if menu == "📊 Dashboard":
+        # Metrics row
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(st.session_state.patients)}</div><div class="metric-label">Total Patients</div></div>', unsafe_allow_html=True)
@@ -582,24 +549,23 @@ def show_admin_dashboard():
         with st.form("reg_form"):
             col1, col2 = st.columns(2)
             with col1:
-                pid = st.text_input("Patient ID (Unique)", placeholder="e.g., PAT001")
+                pid = st.text_input("Patient ID (Unique)")
                 name = st.text_input("Full Name")
-                age = st.number_input("Age", min_value=0, max_value=150, step=1)
+                age = st.number_input("Age", min_value=0, max_value=150)
             with col2:
                 gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-                contact = st.text_input("Contact Number")
+                contact = st.text_input("Contact")
                 address = st.text_area("Address")
-            if st.form_submit_button("Register Patient", use_container_width=True):
+            if st.form_submit_button("Register"):
                 if pid and name:
                     if pid in [p['patient_id'] for p in st.session_state.patients]:
-                        st.error("❌ Patient ID already exists!")
+                        st.error("ID exists!")
                     else:
                         add_patient(pid, name, age, gender, contact, address)
-                        st.success(f"✅ Patient {name} registered successfully!")
-                        st.info(f"📝 Login Credentials:\nPatient ID: {pid}\nName: {name}")
+                        st.success(f"✅ {name} registered! Login ID: {pid}, Name: {name}")
                         st.balloons()
                 else:
-                    st.warning("Please fill all required fields")
+                    st.warning("Fill required fields")
         
         st.subheader("📋 Registered Patients")
         if st.session_state.patients:
@@ -614,17 +580,17 @@ def show_admin_dashboard():
             with st.form("vitals_form"):
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    sys = st.number_input("Systolic BP (mmHg)", 50, 250, 120)
-                    dia = st.number_input("Diastolic BP (mmHg)", 30, 150, 80)
+                    sys = st.number_input("Systolic BP", 50, 250, 120)
+                    dia = st.number_input("Diastolic BP", 30, 150, 80)
                 with col2:
-                    hr = st.number_input("Heart Rate (bpm)", 30, 200, 75)
-                    bs = st.number_input("Blood Sugar (mg/dL)", 0, 600, 100)
+                    hr = st.number_input("Heart Rate", 30, 200, 75)
+                    bs = st.number_input("Blood Sugar", 0, 600, 100)
                 with col3:
                     wt = st.number_input("Weight (kg)", 0, 300, 70)
-                notes = st.text_area("Additional Notes")
-                if st.form_submit_button("Save Vitals", use_container_width=True):
+                notes = st.text_area("Notes")
+                if st.form_submit_button("Save"):
                     add_vitals(selected, sys, dia, hr, bs, wt, notes)
-                    st.success("✅ Vitals recorded successfully!")
+                    st.success("✅ Vitals saved!")
     
     elif menu == "💊 Medications":
         st.header("💊 Prescribe Medication")
@@ -634,15 +600,15 @@ def show_admin_dashboard():
             with st.form("med_form"):
                 med = st.text_input("Medication Name")
                 dose = st.text_input("Dosage")
-                freq = st.selectbox("Frequency", ["Once daily", "Twice daily", "Three times daily", "Weekly"])
+                freq = st.selectbox("Frequency", ["Once daily", "Twice daily", "Three times daily"])
                 col1, col2 = st.columns(2)
                 with col1:
                     start = st.date_input("Start Date")
                 with col2:
                     end = st.date_input("End Date")
-                if st.form_submit_button("Prescribe Medication", use_container_width=True) and med:
+                if st.form_submit_button("Prescribe") and med:
                     add_medication(selected, med, dose, freq, str(start), str(end))
-                    st.success(f"✅ {med} prescribed successfully!")
+                    st.success(f"✅ {med} prescribed!")
     
     elif menu == "📅 Appointments":
         st.header("📅 Schedule Appointment")
@@ -651,14 +617,14 @@ def show_admin_dashboard():
             selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
             with st.form("app_form"):
                 doctor = st.text_input("Doctor Name")
-                date_time = st.datetime_input("Appointment Date & Time")
-                reason = st.text_area("Reason for Visit")
-                if st.form_submit_button("Schedule Appointment", use_container_width=True):
+                date_time = st.datetime_input("Date & Time")
+                reason = st.text_area("Reason")
+                if st.form_submit_button("Schedule"):
                     add_appointment(selected, doctor, str(date_time), reason)
-                    st.success("✅ Appointment scheduled successfully!")
+                    st.success("✅ Appointment scheduled!")
     
     elif menu == "📈 Analytics":
-        st.header("📊 Health Analytics Dashboard")
+        st.header("📊 Health Analytics")
         if st.session_state.vitals:
             patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
             selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
@@ -667,88 +633,60 @@ def show_admin_dashboard():
             df_patient = df[df['patient_id'] == selected].sort_values('date')
             if not df_patient.empty:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_systolic'], name='Systolic', line=dict(color='red', width=2)))
-                fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_diastolic'], name='Diastolic', line=dict(color='blue', width=2)))
-                fig.update_layout(title=f"Blood Pressure Trend - {patients[selected]}", xaxis_title="Date", yaxis_title="mmHg")
+                fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_systolic'], name='Systolic'))
+                fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_diastolic'], name='Diastolic'))
+                fig.update_layout(title=f"BP Trend - {patients[selected]}")
                 st.plotly_chart(fig, use_container_width=True)
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    fig2 = px.line(df_patient, x='date', y='heart_rate', title="Heart Rate Trend", color_discrete_sequence=['green'])
+                    fig2 = px.line(df_patient, x='date', y='heart_rate', title="Heart Rate")
                     st.plotly_chart(fig2, use_container_width=True)
                 with col2:
-                    fig3 = px.line(df_patient, x='date', y='blood_sugar', title="Blood Sugar Trend", color_discrete_sequence=['orange'])
+                    fig3 = px.line(df_patient, x='date', y='blood_sugar', title="Blood Sugar")
                     st.plotly_chart(fig3, use_container_width=True)
     
     elif menu == "📄 Reports":
-        st.header("📄 Generate Patient Health Report")
+        st.header("📄 Generate Report")
         if st.session_state.patients:
             patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
             selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            if st.button("📋 Generate Complete Report", use_container_width=True):
+            if st.button("Generate Report"):
                 patient = next(p for p in st.session_state.patients if p['patient_id'] == selected)
                 vitals = [v for v in st.session_state.vitals if v['patient_id'] == selected]
                 meds = [m for m in st.session_state.medications if m['patient_id'] == selected]
                 report = f"""
-                ========================================
-                ICT IN HEALTH - PATIENT HEALTH REPORT
-                ========================================
-                
-                PATIENT INFORMATION
-                -------------------
-                Patient ID: {selected}
-                Name: {patient['name']}
-                Age: {patient['age']}
-                Gender: {patient['gender']}
+                ICT HEALTH REPORT
+                =================
+                Patient: {patient['name']} (ID: {selected})
+                Age: {patient['age']} | Gender: {patient['gender']}
                 Contact: {patient['contact']}
-                Registration Date: {patient['registration_date']}
                 
-                VITAL SIGNS HISTORY
-                -------------------
+                VITALS HISTORY:
                 """
                 for v in vitals[-10:]:
-                    report += f"""
-                Date: {v['date']}
-                - Blood Pressure: {v['bp_systolic']}/{v['bp_diastolic']} mmHg
-                - Heart Rate: {v['heart_rate']} bpm
-                - Blood Sugar: {v['blood_sugar']} mg/dL
-                - Weight: {v['weight']} kg
-                """
-                report += f"""
-                
-                MEDICATION HISTORY
-                ------------------
-                """
+                    report += f"\n{v['date']}: BP {v['bp_systolic']}/{v['bp_diastolic']}, HR {v['heart_rate']}, BS {v['blood_sugar']}"
+                report += "\n\nMEDICATIONS:\n"
                 for m in meds:
-                    report += f"""
-                - {m['med_name']}: {m['dosage']} ({m['frequency']})
-                  Duration: {m['start_date']} to {m['end_date']}
-                """
-                report += f"""
-                
-                ========================================
-                Report Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-                ========================================
-                """
-                st.text_area("Report Preview", report, height=400)
+                    report += f"\n{m['med_name']}: {m['dosage']} ({m['frequency']})"
+                st.text_area("Report", report, height=400)
                 b64 = base64.b64encode(report.encode()).decode()
-                st.markdown(f'<a href="data:text/plain;base64,{b64}" download="patient_report_{selected}.txt">📥 Download Report (TXT)</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="data:text/plain;base64,{b64}" download="report_{selected}.txt">📥 Download Report</a>', unsafe_allow_html=True)
     
     elif menu == "💾 Backup/Restore":
-        st.header("💾 Backup & Restore Data")
+        st.header("💾 Backup & Restore")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📤 Create Backup ZIP", use_container_width=True):
+            if st.button("Create Backup"):
                 import zipfile, io
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, 'w') as zf:
                     for f in os.listdir(DATA_FOLDER):
                         zf.write(os.path.join(DATA_FOLDER, f), f)
                 b64 = base64.b64encode(buf.getvalue()).decode()
-                st.markdown(f'<a href="data:application/zip;base64,{b64}" download="hospital_backup.zip">📥 Download Backup</a>', unsafe_allow_html=True)
-                st.success("Backup created successfully!")
+                st.markdown(f'<a href="data:application/zip;base64,{b64}" download="backup.zip">📥 Download Backup</a>', unsafe_allow_html=True)
         with col2:
-            uploaded = st.file_uploader("📥 Restore from Backup", type=['zip'])
+            uploaded = st.file_uploader("Restore", type=['zip'])
             if uploaded:
                 import zipfile, io
                 with zipfile.ZipFile(io.BytesIO(uploaded.read()), 'r') as zf:
@@ -759,30 +697,23 @@ def show_admin_dashboard():
         chatbot_ui()
     
     elif menu == "ℹ️ About":
-        st.header("🌐 About ICT Health System")
+        st.header("🌐 About ICT Health")
         st.markdown("""
-        ### Information & Communication Technology in Healthcare
+        **ICT in Health - Hospital Management System**
         
-        **System Features:**
-        - 🔐 Secure Admin & Patient Portals
-        - 📝 Patient Registration & Management
-        - 🩺 Vitals Tracking (BP, Sugar, Heart Rate)
-        - 💊 Medication Prescription & Tracking
-        - 📅 Appointment Scheduling
-        - 📊 Health Analytics Dashboard
-        - 📄 PDF Reports Generation
-        - 🤖 AI Health Assistant Chatbot
+        Features:
+        - Secure Admin & Patient Portals
+        - Patient Registration & Management
+        - Vitals Tracking (BP, Sugar, Heart Rate)
+        - Medication Prescription & Tracking
+        - Appointment Scheduling
+        - Health Analytics Dashboard
+        - PDF Reports Generation
+        - AI Health Assistant Chatbot
         
-        **Access Credentials:**
-        - **Admin**: Username: `admin` | Password: `12345`
-        - **Patient**: Use registered Patient ID + Full Name
-        
-        **Technologies Used:**
-        - Streamlit (Frontend)
-        - CSV Files (Storage)
-        - Plotly (Charts)
-        - Pandas (Data Manipulation)
-        - Google Gemini AI (Chatbot)
+        **Access:**
+        - Admin: `admin` / `12345`
+        - Patient: Use registered Patient ID + Name
         """)
 
 # ==================== PATIENT PORTAL ====================
@@ -807,127 +738,68 @@ def show_patient_portal():
         with col3:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(patient_appointments)}</div><div class="metric-label">Appointments</div></div>', unsafe_allow_html=True)
         if patient_vitals:
-            st.subheader("📋 Your Recent Vitals")
+            st.subheader("Recent Vitals")
             df = pd.DataFrame(patient_vitals[-5:])
             st.dataframe(df[['date', 'bp_systolic', 'bp_diastolic', 'heart_rate', 'blood_sugar']], use_container_width=True)
-        else:
-            st.info("No vitals recorded yet. Visit the clinic to add your health data.")
     
     elif menu == "🩺 My Vitals":
-        st.header("🩺 Your Complete Vitals History")
+        st.header("Your Vitals History")
         if patient_vitals:
             df = pd.DataFrame(patient_vitals)
             st.dataframe(df, use_container_width=True)
             csv = df.to_csv(index=False)
             b64 = base64.b64encode(csv.encode()).decode()
-            st.markdown(f'<a href="data:file/csv;base64,{b64}" download="my_vitals.csv">📥 Export My Vitals to CSV</a>', unsafe_allow_html=True)
-        else:
-            st.info("No vitals records found for you.")
+            st.markdown(f'<a href="data:file/csv;base64,{b64}" download="my_vitals.csv">📥 Export CSV</a>', unsafe_allow_html=True)
     
     elif menu == "💊 My Medications":
-        st.header("💊 Your Prescribed Medications")
+        st.header("Your Medications")
         if patient_meds:
             df = pd.DataFrame(patient_meds)
             st.dataframe(df[['med_name', 'dosage', 'frequency', 'start_date', 'end_date', 'status']], use_container_width=True)
-        else:
-            st.info("No medications prescribed yet.")
     
     elif menu == "📅 My Appointments":
-        st.header("📅 Your Scheduled Appointments")
+        st.header("Your Appointments")
         if patient_appointments:
             df = pd.DataFrame(patient_appointments)
             st.dataframe(df[['date_time', 'doctor', 'reason', 'status']], use_container_width=True)
-        else:
-            st.info("No appointments scheduled yet.")
     
     elif menu == "📈 My Analytics":
-        st.header("📊 Your Health Trends")
+        st.header("Your Health Trends")
         if len(patient_vitals) > 1:
             df = pd.DataFrame(patient_vitals)
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date')
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df['date'], y=df['bp_systolic'], name='Systolic', line=dict(color='red', width=2)))
-            fig.add_trace(go.Scatter(x=df['date'], y=df['bp_diastolic'], name='Diastolic', line=dict(color='blue', width=2)))
-            fig.update_layout(title="Your Blood Pressure Trend", xaxis_title="Date", yaxis_title="mmHg")
+            fig.add_trace(go.Scatter(x=df['date'], y=df['bp_systolic'], name='Systolic'))
+            fig.add_trace(go.Scatter(x=df['date'], y=df['bp_diastolic'], name='Diastolic'))
+            fig.update_layout(title="Your Blood Pressure Trend")
             st.plotly_chart(fig, use_container_width=True)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                fig2 = px.line(df, x='date', y='heart_rate', title="Your Heart Rate Trend", color_discrete_sequence=['green'])
-                st.plotly_chart(fig2, use_container_width=True)
-            with col2:
-                fig3 = px.line(df, x='date', y='blood_sugar', title="Your Blood Sugar Trend", color_discrete_sequence=['orange'])
-                st.plotly_chart(fig3, use_container_width=True)
-        else:
-            st.warning("Need at least 2 vitals records to show trends")
     
     elif menu == "📄 My Reports":
-        st.header("📄 Your Personal Health Report")
-        if st.button("📋 Generate My Health Report", use_container_width=True):
+        st.header("Your Health Report")
+        if st.button("Generate Report"):
             report = f"""
-            ========================================
-            ICT IN HEALTH - PATIENT HEALTH REPORT
-            ========================================
+            PATIENT HEALTH REPORT
+            =====================
+            Patient: {patient_name} (ID: {patient_id})
             
-            PATIENT INFORMATION
-            -------------------
-            Patient ID: {patient_id}
-            Name: {patient_name}
-            
-            YOUR VITAL SIGNS HISTORY
-            -------------------------
+            VITALS HISTORY:
             """
             for v in patient_vitals[-10:]:
-                report += f"""
-            Date: {v['date']}
-            - Blood Pressure: {v['bp_systolic']}/{v['bp_diastolic']} mmHg
-            - Heart Rate: {v['heart_rate']} bpm
-            - Blood Sugar: {v['blood_sugar']} mg/dL
-            - Weight: {v['weight']} kg
-            """
-            report += f"""
-            
-            YOUR MEDICATIONS
-            ----------------
-            """
+                report += f"\n{v['date']}: BP {v['bp_systolic']}/{v['bp_diastolic']}, HR {v['heart_rate']}"
+            report += "\n\nMEDICATIONS:\n"
             for m in patient_meds:
-                report += f"""
-            - {m['med_name']}: {m['dosage']} ({m['frequency']})
-            """
-            report += f"""
-            
-            ========================================
-            Report Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-            ========================================
-            """
-            st.text_area("Your Report", report, height=400)
+                report += f"\n{m['med_name']}: {m['dosage']}"
+            st.text_area("Report", report, height=300)
             b64 = base64.b64encode(report.encode()).decode()
-            st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_health_report.txt">📥 Download My Report</a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_report.txt">📥 Download Report</a>', unsafe_allow_html=True)
     
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
     
     elif menu == "ℹ️ About":
-        st.header("ℹ️ About Your Patient Portal")
-        st.markdown("""
-        ### Your Personal Health Portal
-        
-        Here you can:
-        - ✅ View all your medical records
-        - ✅ Track your vitals over time
-        - ✅ See your prescribed medications
-        - ✅ Check your appointments
-        - ✅ Download your health reports
-        - ✅ Chat with our AI Health Assistant
-        
-        ### Login Information
-        You can login using your **Patient ID** and **Full Name** as registered.
-        
-        ### Privacy & Security
-        Your data is stored securely and only you can access your records.
-        Always consult a doctor for medical advice.
-        """)
+        st.header("About Your Portal")
+        st.markdown("View your medical records, track vitals, and manage appointments.")
 
 # ==================== MAIN ====================
 
