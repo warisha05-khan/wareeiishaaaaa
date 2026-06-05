@@ -1,15 +1,16 @@
 """
 Mental Health Chatbot Module powered by Google Gemini AI
-Provides empathetic support with crisis detection
+Uses the new google-genai SDK and stable Gemini 2.5 models
 """
 
 import streamlit as st
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables (works for both local and cloud)
+# Load environment variables
 load_dotenv()
 
 # Get API key
@@ -34,7 +35,7 @@ CRISIS_RESPONSE = """
 **You are not alone. People care about you and want to help. Please reach out now.** 💙
 """
 
-# System prompt for mental health context
+# System prompt
 MENTAL_HEALTH_PROMPT = """You are a compassionate, empathetic mental health support assistant. Your role is to:
 
 1. Listen actively and show empathy
@@ -44,10 +45,6 @@ MENTAL_HEALTH_PROMPT = """You are a compassionate, empathetic mental health supp
 5. NEVER provide clinical diagnoses or medical advice
 6. ALWAYS remind users to seek professional help for serious concerns
 7. Keep responses warm, supportive, and conversational (2-4 sentences typically)
-
-For stress/anxiety: Suggest deep breathing, 5-4-3-2-1 grounding technique
-For sadness: Normalize feelings, suggest talking to someone or light activity
-For loneliness: Recommend connecting with friends, family, or support groups
 
 Important disclaimers to include naturally:
 - "I'm an AI, not a therapist"
@@ -107,7 +104,7 @@ def load_chat_history(patient_id):
 
 
 def get_gemini_response(user_message, chat_history_context):
-    """Get empathetic response from Gemini API"""
+    """Get empathetic response from Gemini API using new SDK"""
     
     if not GOOGLE_API_KEY:
         return "⚠️ Chatbot is not configured. Please add your Google API key in Streamlit Cloud Settings → Secrets."
@@ -116,13 +113,10 @@ def get_gemini_response(user_message, chat_history_context):
         return CRISIS_RESPONSE
     
     try:
-        genai.configure(api_key=GOOGLE_API_KEY)
+        # NEW SDK: Create client (different from old SDK)
+        client = genai.Client(api_key=GOOGLE_API_KEY)
         
-        # UPDATED: Use the correct model name (gemini-pro is deprecated)
-        # gemini-1.5-flash is faster and works well for chat
-        
-        model = genai.GenerativeModel('gemini-2.5-flash-preview')
-        
+        # Build the full prompt
         full_prompt = f"""{MENTAL_HEALTH_PROMPT}
 
 Previous conversation:
@@ -132,7 +126,16 @@ User says: {user_message}
 
 Respond as a caring mental health support assistant:"""
         
-        response = model.generate_content(full_prompt)
+        # NEW SDK: Generate content with stable model
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',  # Stable model, guaranteed to work
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                max_output_tokens=500,
+            )
+        )
+        
         return response.text
         
     except Exception as e:
