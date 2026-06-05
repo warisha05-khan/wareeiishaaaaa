@@ -30,12 +30,21 @@ st.markdown("""
 <style>
     /* Sidebar styling */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f2b1f 0%, #1a4a2a 100%);
+        background: linear-gradient(180deg, #0f2b1f 0%, #1a4a2a 50%, #0f2b1f 100%);
         padding-top: 20px;
     }
     
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
         color: white;
+    }
+
+    /* Fix the ugly bottom - force consistent color on all sidebar children */
+    section[data-testid="stSidebar"] > div {
+        background: transparent !important;
+    }
+
+    section[data-testid="stSidebar"] > div:last-child {
+        background: #0f2b1f !important;
     }
     
     /* Sidebar navigation buttons */
@@ -175,6 +184,26 @@ st.markdown("""
     .metric-label {
         font-size: 0.85rem;
         color: #666;
+    }
+
+    /* Fix Streamlit's default selectbox & widget backgrounds in sidebar */
+    [data-testid="stSidebar"] .stSelectbox > div > div {
+        background: rgba(255,255,255,0.1) !important;
+        color: white !important;
+        border-color: rgba(255,255,255,0.2) !important;
+    }
+
+    [data-testid="stSidebar"] .stSuccess,
+    [data-testid="stSidebar"] .stInfo {
+        background: rgba(255,255,255,0.1) !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
+        color: white !important;
+        border-radius: 10px;
+    }
+
+    /* Hide Streamlit's default footer branding at bottom of sidebar */
+    [data-testid="stSidebar"] footer {
+        display: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
