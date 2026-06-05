@@ -1,17 +1,18 @@
 """
 ICT in Health - Hospital Management System
 With Secure Login: Admin Portal + Patient Portal (ID + Name only)
-Beautiful Sidebar Navigation - All features visible
+Beautiful Sidebar Navigation + Medicine Reminders with Alarm
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, time as dt_time
 import os
 import base64
 import hashlib
+import json
 
 # Import chatbot module
 from chatbot import chatbot_ui
@@ -38,7 +39,6 @@ st.markdown("""
         color: white;
     }
 
-    /* Fix the ugly bottom - force consistent color on all sidebar children */
     section[data-testid="stSidebar"] > div {
         background: transparent !important;
     }
@@ -47,39 +47,27 @@ st.markdown("""
         background: #0f2b1f !important;
     }
     
-    /* Sidebar navigation buttons */
     [data-testid="stSidebar"] .stButton > button {
-    background: rgba(255,255,255,0.08) !important;
-    color: white !important;
-    border: 1px solid rgba(255,255,255,0.15) !important;
-    border-radius: 12px !important;
-    font-weight: 500 !important;
-    transition: all 0.3s ease !important;
-}
+        background: rgba(255,255,255,0.08) !important;
+        color: white !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
+        border-radius: 12px !important;
+        font-weight: 500 !important;
+        transition: all 0.3s ease !important;
+    }
 
-[data-testid="stSidebar"] .stButton > button:hover {
-    background: rgba(255,255,255,0.18) !important;
-    border-color: #ffd700 !important;
-    transform: translateX(4px) !important;
-}
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: rgba(255,255,255,0.18) !important;
+        border-color: #ffd700 !important;
+        transform: translateX(4px) !important;
+    }
 
-[data-testid="stSidebar"] .stButton > button:focus {
-    background: linear-gradient(135deg, #2d8c5a, #1f6e4a) !important;
-    border-left: 3px solid #ffd700 !important;
-    box-shadow: none !important;
-}
-    
-    .nav-button:hover {
-        background: rgba(255,255,255,0.2);
-        transform: translateX(5px);
+    [data-testid="stSidebar"] .stButton > button:focus {
+        background: linear-gradient(135deg, #2d8c5a, #1f6e4a) !important;
+        border-left: 3px solid #ffd700 !important;
+        box-shadow: none !important;
     }
     
-    .nav-button-active {
-        background: linear-gradient(135deg, #2d8c5a 0%, #1f6e4a 100%);
-        border-left: 4px solid #ffd700;
-    }
-    
-    /* Sidebar header */
     .sidebar-header {
         text-align: center;
         padding: 20px 15px;
@@ -98,7 +86,6 @@ st.markdown("""
         font-size: 0.7rem;
     }
     
-    /* User info card */
     .user-card {
         background: rgba(255,255,255,0.1);
         border-radius: 15px;
@@ -117,15 +104,14 @@ st.markdown("""
         font-size: 0.8rem;
     }
     
-    /* Stats in sidebar */
-.stat-card {
-    background: rgba(255,255,255,0.08);
-    border-radius: 12px;
-    padding: 10px;
-    margin: 8px 10px;
-    text-align: center;
-    border-left: 3px solid #ffd700;  /* ADD THIS LINE */
-}
+    .stat-card {
+        background: rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 10px;
+        margin: 8px 10px;
+        text-align: center;
+        border-left: 3px solid #ffd700;
+    }
     
     .stat-number {
         font-size: 1.5rem;
@@ -138,26 +124,6 @@ st.markdown("""
         color: #c0e0d0;
     }
     
-    /* Logout button */
-    .logout-btn {
-        background: #dc2626;
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 12px;
-        margin: 20px 10px;
-        width: calc(100% - 20px);
-        font-weight: bold;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    
-    .logout-btn:hover {
-        background: #b91c1c;
-        transform: scale(1.02);
-    }
-    
-    /* Main content area */
     .main-header {
         background: linear-gradient(135deg, #1f6e4a 0%, #0f533a 100%);
         padding: 20px 30px;
@@ -166,7 +132,6 @@ st.markdown("""
         color: white;
     }
     
-    /* Metric cards */
     .metric-card {
         background: white;
         border-radius: 15px;
@@ -191,7 +156,20 @@ st.markdown("""
         color: #666;
     }
 
-    /* Fix Streamlit's default selectbox & widget backgrounds in sidebar */
+    .reminder-card {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border-radius: 15px;
+        padding: 15px;
+        margin: 10px 0;
+        border-left: 5px solid #f59e0b;
+    }
+    
+    .reminder-time {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #d97706;
+    }
+
     [data-testid="stSidebar"] .stSelectbox > div > div {
         background: rgba(255,255,255,0.1) !important;
         color: white !important;
@@ -206,9 +184,17 @@ st.markdown("""
         border-radius: 10px;
     }
 
-    /* Hide Streamlit's default footer branding at bottom of sidebar */
     [data-testid="stSidebar"] footer {
         display: none !important;
+    }
+    
+    .alarm-badge {
+        background: #ef4444;
+        color: white;
+        border-radius: 50%;
+        padding: 2px 8px;
+        font-size: 0.7rem;
+        margin-left: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -232,6 +218,10 @@ def init_auth():
         st.session_state.current_patient_name = None
     if 'selected_menu' not in st.session_state:
         st.session_state.selected_menu = "📊 Dashboard"
+    if 'reminders' not in st.session_state:
+        st.session_state.reminders = []
+    if 'reminder_check_time' not in st.session_state:
+        st.session_state.reminder_check_time = None
 
 init_auth()
 
@@ -244,6 +234,69 @@ def verify_patient(patient_id, patient_name):
         if patient['patient_id'] == patient_id and patient['name'].lower() == patient_name.lower():
             return True, patient['name']
     return False, None
+
+# ==================== REMINDER FUNCTIONS ====================
+
+REMINDERS_FILE = os.path.join("hospital_data", "reminders.json")
+
+def save_reminders():
+    """Save reminders to JSON file"""
+    with open(REMINDERS_FILE, 'w') as f:
+        json.dump(st.session_state.reminders, f, indent=2)
+
+def load_reminders():
+    """Load reminders from JSON file"""
+    if os.path.exists(REMINDERS_FILE):
+        with open(REMINDERS_FILE, 'r') as f:
+            st.session_state.reminders = json.load(f)
+
+def add_reminder(patient_id, medicine_name, reminder_time, dosage):
+    """Add a new medicine reminder"""
+    reminder = {
+        'id': len(st.session_state.reminders) + 1,
+        'patient_id': patient_id,
+        'medicine_name': medicine_name,
+        'reminder_time': reminder_time,
+        'dosage': dosage,
+        'active': True,
+        'created_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    st.session_state.reminders.append(reminder)
+    save_reminders()
+    return True
+
+def delete_reminder(reminder_id):
+    """Delete a reminder"""
+    st.session_state.reminders = [r for r in st.session_state.reminders if r['id'] != reminder_id]
+    save_reminders()
+
+def toggle_reminder(reminder_id):
+    """Toggle reminder active status"""
+    for r in st.session_state.reminders:
+        if r['id'] == reminder_id:
+            r['active'] = not r['active']
+            break
+    save_reminders()
+
+def check_and_show_reminders():
+    """Check if any reminders are due and show notification"""
+    if st.session_state.user_type == "patient":
+        patient_id = st.session_state.current_patient_id
+        current_time = datetime.now().strftime("%H:%M")
+        
+        # Check if we already showed notification for this minute
+        if st.session_state.reminder_check_time == current_time:
+            return
+        
+        st.session_state.reminder_check_time = current_time
+        
+        for reminder in st.session_state.reminders:
+            if (reminder['patient_id'] == patient_id and 
+                reminder['active'] and 
+                reminder['reminder_time'] == current_time):
+                
+                # Show alert using Streamlit toast
+                st.toast(f"💊 Time to take {reminder['medicine_name']} ({reminder['dosage']})", icon="🔔")
 
 # ==================== FILE STORAGE FUNCTIONS ====================
 
@@ -318,6 +371,7 @@ def init_session_state():
         st.session_state.appointments = load_appointments()
 
 init_session_state()
+load_reminders()
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -456,7 +510,6 @@ def render_sidebar():
     """Render beautiful sidebar with navigation buttons"""
     
     with st.sidebar:
-        # Header
         st.markdown("""
         <div class="sidebar-header">
             <h1>🏥 ICT Health</h1>
@@ -464,7 +517,6 @@ def render_sidebar():
         </div>
         """, unsafe_allow_html=True)
         
-        # User info
         if st.session_state.user_type == "admin":
             st.markdown("""
             <div class="user-card">
@@ -473,7 +525,6 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
-            # Stats for admin
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-number">{len(st.session_state.patients)}</div>
@@ -491,15 +542,13 @@ def render_sidebar():
             
             st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 MAIN MENU</div>", unsafe_allow_html=True)
             
-            # Admin menu items
             menu_items = [
                 "📊 Dashboard", "👨‍👩‍👧 Register Patient", "🩺 Record Vitals",
                 "💊 Medications", "📅 Appointments", "📈 Analytics",
-                "📄 Reports", "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
+                "📄 Reports", "⏰ Medicine Reminders", "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
             ]
             
         else:
-            # Patient info
             patient_vitals, patient_meds, _ = get_patient_data(st.session_state.current_patient_id)
             st.markdown(f"""
             <div class="user-card">
@@ -508,6 +557,7 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
+            active_reminders = len([r for r in st.session_state.reminders if r['patient_id'] == st.session_state.current_patient_id and r['active']])
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-number">{len(patient_vitals)}</div>
@@ -517,51 +567,116 @@ def render_sidebar():
                 <div class="stat-number">{len(patient_meds)}</div>
                 <div class="stat-label">Your Medications</div>
             </div>
+            <div class="stat-card">
+                <div class="stat-number">{active_reminders}</div>
+                <div class="stat-label">Active Reminders</div>
+            </div>
             """, unsafe_allow_html=True)
             
             st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 YOUR PORTAL</div>", unsafe_allow_html=True)
             
-            # Patient menu items
             menu_items = [
                 "📊 My Dashboard", "🩺 My Vitals", "💊 My Medications",
                 "📅 My Appointments", "📈 My Analytics", "📄 My Reports",
-                "🤖 AI Assistant", "ℹ️ About"
+                "⏰ My Reminders", "🤖 AI Assistant", "ℹ️ About"
             ]
         
-        # Render menu buttons
         for item in menu_items:
-            is_active = st.session_state.selected_menu == item
-            active_class = "nav-button-active" if is_active else ""
-            
-            # Create clickable button
             if st.button(item, key=f"sidebar_{item}", use_container_width=True):
                 st.session_state.selected_menu = item
                 st.rerun()
         
-        # Logout button
         st.markdown("---")
         if st.button("🚪 Logout", key="sidebar_logout", use_container_width=True):
             logout()
         
-        # Footer
         st.markdown("""
         <div style="text-align: center; padding: 20px 10px; margin-top: 20px;">
             <small style="color: #a0c4b0;">© 2026 ICT Health<br>Secure Hospital System</small>
         </div>
         """, unsafe_allow_html=True)
 
+# ==================== REMINDER UI COMPONENTS ====================
+
+def show_reminder_management():
+    """Show reminder management interface for admin and patient"""
+    st.header("⏰ Medicine Reminder System")
+    
+    if st.session_state.user_type == "admin":
+        st.info("Admin can set reminders for patients. Select a patient below.")
+        patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
+        if patients:
+            selected_patient = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+            show_patient = selected_patient
+        else:
+            st.warning("No patients registered yet.")
+            return
+    else:
+        show_patient = st.session_state.current_patient_id
+        st.success(f"Set reminders for your medications, {st.session_state.current_patient_name}!")
+    
+    # Add new reminder
+    with st.expander("➕ Add New Medicine Reminder", expanded=True):
+        with st.form("add_reminder_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                medicine_name = st.text_input("Medicine Name", placeholder="e.g., Metformin, Lisinopril")
+                reminder_time = st.time_input("Reminder Time", value=dt_time(9, 0))
+            with col2:
+                dosage = st.text_input("Dosage", placeholder="e.g., 500mg, 1 tablet")
+            
+            submitted = st.form_submit_button("🔔 Set Reminder", use_container_width=True)
+            
+            if submitted and medicine_name:
+                add_reminder(show_patient, medicine_name, reminder_time.strftime("%H:%M"), dosage)
+                st.success(f"✅ Reminder set for {medicine_name} at {reminder_time.strftime('%H:%M')}")
+                st.rerun()
+            elif submitted:
+                st.warning("Please enter medicine name")
+    
+    # Show existing reminders
+    st.subheader("📋 Your Active Reminders")
+    
+    patient_reminders = [r for r in st.session_state.reminders if r['patient_id'] == show_patient]
+    
+    if patient_reminders:
+        for reminder in patient_reminders:
+            with st.container():
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                with col1:
+                    st.markdown(f"**💊 {reminder['medicine_name']}**")
+                with col2:
+                    st.markdown(f"⏰ {reminder['reminder_time']}")
+                with col3:
+                    st.markdown(f"📦 {reminder['dosage']}")
+                with col4:
+                    status = "🔔 Active" if reminder['active'] else "🔕 Paused"
+                    st.markdown(f"<span style='color: #10b981;'>{status}</span>", unsafe_allow_html=True)
+                
+                col1, col2, col3 = st.columns([1, 1, 4])
+                with col1:
+                    if st.button("⏯️ Toggle", key=f"toggle_{reminder['id']}"):
+                        toggle_reminder(reminder['id'])
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Delete", key=f"del_{reminder['id']}"):
+                        delete_reminder(reminder['id'])
+                        st.rerun()
+                st.markdown("---")
+    else:
+        st.info("No reminders set. Add a reminder above to get medicine alerts!")
+
 # ==================== ADMIN DASHBOARD ====================
 
 def show_admin_dashboard():
     render_sidebar()
+    check_and_show_reminders()
     
-    # Main content header
     st.markdown('<div class="main-header"><h2>🏥 ICT Health - Admin Dashboard</h2><p>Complete Patient Data Access</p></div>', unsafe_allow_html=True)
     
     menu = st.session_state.selected_menu
     
     if menu == "📊 Dashboard":
-        # Metrics row
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(st.session_state.patients)}</div><div class="metric-label">Total Patients</div></div>', unsafe_allow_html=True)
@@ -572,6 +687,10 @@ def show_admin_dashboard():
             st.markdown(f'<div class="metric-card"><div class="metric-value">{active}</div><div class="metric-label">Active Meds</div></div>', unsafe_allow_html=True)
         with col4:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(st.session_state.appointments)}</div><div class="metric-label">Appointments</div></div>', unsafe_allow_html=True)
+        
+        # Show active reminders count in dashboard
+        active_reminders = len([r for r in st.session_state.reminders if r['active']])
+        st.info(f"🔔 **Active Medicine Reminders:** {active_reminders} reminders set for patients")
         
         if st.session_state.patients:
             st.subheader("📋 All Registered Patients")
@@ -707,6 +826,9 @@ def show_admin_dashboard():
                 b64 = base64.b64encode(report.encode()).decode()
                 st.markdown(f'<a href="data:text/plain;base64,{b64}" download="report_{selected}.txt">📥 Download Report</a>', unsafe_allow_html=True)
     
+    elif menu == "⏰ Medicine Reminders":
+        show_reminder_management()
+    
     elif menu == "💾 Backup/Restore":
         st.header("💾 Backup & Restore")
         col1, col2 = st.columns(2)
@@ -740,6 +862,7 @@ def show_admin_dashboard():
         - Patient Registration & Management
         - Vitals Tracking (BP, Sugar, Heart Rate)
         - Medication Prescription & Tracking
+        - ⏰ **Medicine Reminders with Alarm**
         - Appointment Scheduling
         - Health Analytics Dashboard
         - PDF Reports Generation
@@ -754,6 +877,7 @@ def show_admin_dashboard():
 
 def show_patient_portal():
     render_sidebar()
+    check_and_show_reminders()
     
     patient_id = st.session_state.current_patient_id
     patient_name = st.session_state.current_patient_name
@@ -771,6 +895,14 @@ def show_patient_portal():
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(patient_meds)}</div><div class="metric-label">Medications</div></div>', unsafe_allow_html=True)
         with col3:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(patient_appointments)}</div><div class="metric-label">Appointments</div></div>', unsafe_allow_html=True)
+        
+        # Show upcoming reminders on dashboard
+        upcoming_reminders = [r for r in st.session_state.reminders if r['patient_id'] == patient_id and r['active']]
+        if upcoming_reminders:
+            st.subheader("🔔 Your Active Reminders")
+            for r in upcoming_reminders[:3]:
+                st.markdown(f'<div class="reminder-card">💊 <strong>{r["medicine_name"]}</strong> - {r["dosage"]} at ⏰ {r["reminder_time"]}</div>', unsafe_allow_html=True)
+        
         if patient_vitals:
             st.subheader("Recent Vitals")
             df = pd.DataFrame(patient_vitals[-5:])
@@ -827,6 +959,9 @@ def show_patient_portal():
             st.text_area("Report", report, height=300)
             b64 = base64.b64encode(report.encode()).decode()
             st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_report.txt">📥 Download Report</a>', unsafe_allow_html=True)
+    
+    elif menu == "⏰ My Reminders":
+        show_reminder_management()
     
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
