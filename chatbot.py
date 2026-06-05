@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 # Load environment variables (works for both local and cloud)
 load_dotenv()
 
-# Get API key (don't configure yet - wait until needed)
+# Get API key
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Crisis keywords for emergency detection
@@ -72,7 +72,6 @@ def save_chat_history(patient_id, user_message, bot_response):
     import pandas as pd
     import os
     
-    # Ensure folder exists
     os.makedirs("hospital_data", exist_ok=True)
     
     chat_file = f"hospital_data/chat_history_{patient_id}.csv"
@@ -110,22 +109,19 @@ def load_chat_history(patient_id):
 def get_gemini_response(user_message, chat_history_context):
     """Get empathetic response from Gemini API"""
     
-    # Check if API key is available
     if not GOOGLE_API_KEY:
-        return "⚠️ Chatbot is not configured. Please add your Google API key in Streamlit Cloud Settings → Secrets.\n\nFormat: `GOOGLE_API_KEY = \"your_key_here\"`"
+        return "⚠️ Chatbot is not configured. Please add your Google API key in Streamlit Cloud Settings → Secrets."
     
-    # Check for crisis first
     if detect_crisis(user_message):
         return CRISIS_RESPONSE
     
     try:
-        # Configure Gemini with the API key (do it here, not at module level)
         genai.configure(api_key=GOOGLE_API_KEY)
         
-        # Initialize the model
-        model = genai.GenerativeModel('gemini-pro')
+        # UPDATED: Use the correct model name (gemini-pro is deprecated)
+        # gemini-1.5-flash is faster and works well for chat
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # Build full prompt with context
         full_prompt = f"""{MENTAL_HEALTH_PROMPT}
 
 Previous conversation:
@@ -135,9 +131,7 @@ User says: {user_message}
 
 Respond as a caring mental health support assistant:"""
         
-        # Generate response
         response = model.generate_content(full_prompt)
-        
         return response.text
         
     except Exception as e:
@@ -150,131 +144,93 @@ def chatbot_ui():
     st.subheader("🧠 Mental Health Support Chatbot")
     st.caption("I'm here to listen and support. This is a safe, non-judgmental space.")
     
-    # Check if API key is configured and show status
-    if GOOGLE_API_KEY:
-        st.success("✅ Chatbot is ready! I'm here to listen and support you.")
-    else:
+    # Check API key
+    if not GOOGLE_API_KEY:
         st.error("""
         ### ⚠️ Chatbot Not Configured
         
-        To use the mental health chatbot, you need to add your Google Gemini API key:
+        To use the mental health chatbot, add your Google Gemini API key:
         
-        1. Go to your app on **Streamlit Cloud**
-        2. Click **Settings** → **Secrets**
-        3. Add: `GOOGLE_API_KEY = "your_actual_api_key_here"`
-        4. Click **Save**
-        
-        The chatbot will work immediately after saving.
+        1. Go to **Settings** → **Secrets**
+        2. Add: `GOOGLE_API_KEY = "your_key_here"`
+        3. Click **Save**
         """)
-        return  # Stop here - don't show chat interface without API key
+        return
     
-    # Patient selection for chat history
+    st.success("✅ Chatbot is ready! I'm here to listen and support you.")
+    
+    # Patient selection
     if st.session_state.patients:
         patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
         selected_patient = st.selectbox(
-            "Select Patient (for saving chat history)",
-            ["Guest (no history save)"] + [p['patient_id'] for p in st.session_state.patients],
+            "Select Patient",
+            ["Guest"] + [p['patient_id'] for p in st.session_state.patients],
             format_func=lambda x: f"{x} - {patient_names.get(x, 'Guest Mode')}" if x in patient_names else x
         )
     else:
-        selected_patient = "Guest (no history save)"
-        st.info("Register a patient to save chat history across sessions.")
+        selected_patient = "Guest"
+        st.info("Register a patient to save chat history.")
     
-    # Initialize session state for chat messages
+    # Initialize chat
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
     
-    # Load previous chat history if patient selected
-    if selected_patient != "Guest (no history save)":
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📜 Load Previous Chats", use_container_width=True):
-                history = load_chat_history(selected_patient)
-                if history:
-                    st.session_state.chat_messages = []
-                    for entry in history:
-                        st.session_state.chat_messages.append({"role": "user", "content": entry['user_message']})
-                        st.session_state.chat_messages.append({"role": "assistant", "content": entry['bot_response']})
-                    st.success(f"Loaded {len(history)} previous conversations")
-                    st.rerun()
-                else:
-                    st.info("No previous chat history found")
-        with col2:
-            if st.button("🗑️ Clear Chat", use_container_width=True):
+    # Load history for patient
+    if selected_patient != "Guest":
+        if st.button("📜 Load Previous Chats"):
+            history = load_chat_history(selected_patient)
+            if history:
                 st.session_state.chat_messages = []
+                for entry in history:
+                    st.session_state.chat_messages.append({"role": "user", "content": entry['user_message']})
+                    st.session_state.chat_messages.append({"role": "assistant", "content": entry['bot_response']})
+                st.success(f"Loaded {len(history)} conversations")
                 st.rerun()
     
-    # Display disclaimer
-    st.info("💡 **Remember**: I'm an AI support companion, not a replacement for professional mental health care.")
+    st.info("💡 **Remember**: I'm an AI support companion, not a replacement for professional care.")
     
-    # Display chat messages
+    # Display messages
     for message in st.session_state.chat_messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
     # Chat input
-    if prompt := st.chat_input("How are you feeling today? I'm here to listen..."):
-        
-        # Add user message
+    if prompt := st.chat_input("How are you feeling today?"):
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Prepare context from last exchanges
         context = ""
         for msg in st.session_state.chat_messages[-6:]:
             context += f"{msg['role']}: {msg['content']}\n"
         
-        # Get bot response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 response = get_gemini_response(prompt, context)
                 st.markdown(response)
         
-        # Add bot response
         st.session_state.chat_messages.append({"role": "assistant", "content": response})
         
-        # Save to history
-        if selected_patient != "Guest (no history save)":
+        if selected_patient != "Guest":
             save_chat_history(selected_patient, prompt, response)
     
-    # Quick action buttons
+    # Quick buttons
     st.markdown("---")
-    st.markdown("**Quick coping strategies:**")
     col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button("🧘 Deep Breathing", use_container_width=True):
-            breathing_response = """**Try this 4-7-8 breathing technique:**
-
-1. Inhale through your nose for **4 seconds**
-2. Hold your breath for **7 seconds**
-3. Exhale slowly through your mouth for **8 seconds**
-
-Repeat 4 times. This activates your parasympathetic nervous system and reduces stress."""
-            st.session_state.chat_messages.append({"role": "assistant", "content": breathing_response})
+            breathing = "**4-7-8 Breathing:** Inhale 4 sec → Hold 7 sec → Exhale 8 sec. Repeat 4 times."
+            st.session_state.chat_messages.append({"role": "assistant", "content": breathing})
             st.rerun()
     
     with col2:
-        if st.button("🌿 Grounding Exercise", use_container_width=True):
-            grounding_response = """**5-4-3-2-1 Grounding Technique**
-
-- **5** things you can SEE
-- **4** things you can TOUCH
-- **3** things you can HEAR
-- **2** things you can SMELL
-- **1** thing you can TASTE
-
-This brings you to the present moment."""
-            st.session_state.chat_messages.append({"role": "assistant", "content": grounding_response})
+        if st.button("🌿 Grounding", use_container_width=True):
+            grounding = "**5-4-3-2-1:** Name 5 things you see, 4 you touch, 3 you hear, 2 you smell, 1 you taste."
+            st.session_state.chat_messages.append({"role": "assistant", "content": grounding})
             st.rerun()
     
     with col3:
-        if st.button("📝 Journal Prompt", use_container_width=True):
-            journal_response = """**Today's journal prompt:**
-
-"Today, I feel... because..."
-
-Write freely for 5 minutes without judgment."""
-            st.session_state.chat_messages.append({"role": "assistant", "content": journal_response})
+        if st.button("🗑️ Clear Chat", use_container_width=True):
+            st.session_state.chat_messages = []
             st.rerun()
