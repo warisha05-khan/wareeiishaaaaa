@@ -1,7 +1,6 @@
 """
 ICT in Health - Hospital Management System
-With Patient Self-Registration + Admin Approval
-Admin generates Patient ID after approval
+With Patient Self-Registration + Admin Approval + Patient Status Check
 """
 
 import streamlit as st
@@ -215,6 +214,23 @@ st.markdown("""
         border-radius: 10px;
         margin-bottom: 15px;
     }
+    
+    .success-box {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        padding: 25px;
+        border-radius: 15px;
+        text-align: center;
+        margin: 15px 0;
+    }
+    
+    .pending-box {
+        background: #fef3c7;
+        padding: 20px;
+        border-radius: 15px;
+        text-align: center;
+        margin: 15px 0;
+        border-left: 5px solid #f59e0b;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -323,6 +339,7 @@ def approve_request(request_id, patient_id):
         if req['id'] == request_id:
             req['status'] = 'approved'
             req['assigned_id'] = patient_id
+            req['approved_date'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             # Add to patients list
             add_patient(patient_id, req['name'], req['age'], req['gender'], req['contact'], req['address'])
             break
@@ -608,7 +625,7 @@ def show_login_page():
         </div>
         """, unsafe_allow_html=True)
         
-        tab1, tab2, tab3, tab4 = st.tabs(["👨‍💼 Admin Login", "👨‍⚕️ Doctor Login", "👤 Patient Login", "📝 New Patient Registration"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["👨‍💼 Admin Login", "👨‍⚕️ Doctor Login", "👤 Patient Login", "📝 New Registration", "🔍 Check Status"])
         
         with tab1:
             admin_username = st.text_input("Username", key="admin_user", placeholder="admin")
@@ -638,7 +655,7 @@ def show_login_page():
                     st.error("❌ Invalid doctor credentials!")
         
         with tab3:
-            st.info("🔐 Patient Login - Use the Patient ID provided by admin after registration approval")
+            st.info("🔐 Patient Login - Use the Patient ID provided after admin approval")
             col1, col2 = st.columns(2)
             with col1:
                 patient_id = st.text_input("Patient ID", key="patient_id", placeholder="e.g., PAT001")
@@ -660,7 +677,7 @@ def show_login_page():
         
         with tab4:
             st.header("📝 Patient Self Registration")
-            st.info("Register yourself online. After admin approval, you will receive a Patient ID to access your portal.")
+            st.info("Register yourself online. After admin approval, you will receive a Patient ID.")
             
             with st.form("self_registration_form"):
                 col1, col2 = st.columns(2)
@@ -669,23 +686,97 @@ def show_login_page():
                     age = st.number_input("Age*", min_value=0, max_value=150)
                     gender = st.selectbox("Gender*", ["Male", "Female", "Other"])
                 with col2:
-                    contact = st.text_input("Contact Number*")
+                    contact = st.text_input("Contact Number*", placeholder="e.g., 03001234567")
                     address = st.text_area("Address*")
                 reason = st.text_area("Reason for Registration / Any Health Concerns", height=100, 
                                      placeholder="Please describe any health concerns or reason for registration...")
                 
-                st.warning("⚠️ Your registration will be reviewed by admin. You will receive a Patient ID via this portal after approval.")
+                st.warning("⚠️ Your registration will be reviewed by admin. You will receive your Patient ID via the 'Check Status' tab after approval.")
                 
                 submitted = st.form_submit_button("Submit Registration Request")
                 
                 if submitted:
                     if name and age and contact and address:
                         add_registration_request(name, age, gender, contact, address, reason)
-                        st.success("✅ Registration request submitted successfully! Admin will review and approve your registration.")
-                        st.info("📌 Please check back later for your Patient ID. You will use it to login to your portal.")
+                        st.success("✅ Registration request submitted successfully!")
+                        st.info("📌 Please go to the 'Check Status' tab to see your approval status and Patient ID once approved.")
                         st.balloons()
                     else:
                         st.warning("Please fill all required fields (*)")
+        
+        with tab5:
+            st.header("🔍 Check Your Registration Status")
+            st.info("Enter your registered name and contact number to check your approval status and get your Patient ID.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                check_name = st.text_input("Enter your Full Name", key="check_name", placeholder="Enter the name you registered with")
+            with col2:
+                check_contact = st.text_input("Enter your Contact Number", key="check_contact", placeholder="Enter your registered contact number")
+            
+            if st.button("🔍 Check Status", key="check_status", use_container_width=True):
+                if check_name and check_contact:
+                    # Find matching registration
+                    matching_requests = [r for r in st.session_state.registration_requests 
+                                        if r['name'].lower() == check_name.lower() and r['contact'] == check_contact]
+                    
+                    if matching_requests:
+                        latest_request = matching_requests[-1]
+                        
+                        if latest_request['status'] == 'approved':
+                            st.balloons()
+                            st.markdown(f"""
+                            <div class="success-box">
+                                <h2 style="color: #059669;">✅ Registration Approved!</h2>
+                                <hr>
+                                <p style="font-size: 1.1rem;">Your Patient ID is:</p>
+                                <h1 style="color: #059669; font-size: 3rem; font-weight: bold;">{latest_request['assigned_id']}</h1>
+                                <div style="background: white; padding: 15px; border-radius: 10px; margin-top: 15px;">
+                                    <p><strong>📝 Login Credentials:</strong></p>
+                                    <p>🔐 Patient ID: <code>{latest_request['assigned_id']}</code></p>
+                                    <p>🔐 Password/Name: <code>{latest_request['name']}</code></p>
+                                    <hr>
+                                    <p>✅ Use these credentials to login to your patient portal.</p>
+                                    <p>📅 You can now schedule appointments and access your health records.</p>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Downloadable credentials
+                            creds = f"Patient ID: {latest_request['assigned_id']}\nName: {latest_request['name']}\nContact: {latest_request['contact']}\n\nPlease keep this information safe."
+                            b64 = base64.b64encode(creds.encode()).decode()
+                            st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_credentials.txt">📥 Download My Credentials</a>', unsafe_allow_html=True)
+                            
+                            st.info(f"📱 A notification has been sent to your registered number: {latest_request['contact']} (Simulated)")
+                            
+                        elif latest_request['status'] == 'rejected':
+                            st.error(f"❌ Sorry, your registration request was rejected.")
+                            st.markdown("""
+                            <div style="background: #fee2e2; padding: 15px; border-radius: 10px; margin-top: 10px;">
+                                <p>💡 You can submit a new registration request using the 'New Registration' tab.</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        else:
+                            st.markdown(f"""
+                            <div class="pending-box">
+                                <h3 style="color: #d97706;">⏳ Pending Approval</h3>
+                                <p>Your registration is still under review.</p>
+                                <p><strong>📅 Submitted on:</strong> {latest_request['submitted_date']}</p>
+                                <p>📌 Please check back later. Admin will review your request soon.</p>
+                                <progress value="50" max="100" style="width: 100%; height: 10px; border-radius: 5px;"></progress>
+                                <p style="color: #666;">Status: Under Review</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                    else:
+                        st.error(f"❌ No registration found with name '{check_name}' and contact number '{check_contact}'. Please register first using the 'New Registration' tab.")
+                else:
+                    st.warning("⚠️ Please enter both your name and contact number")
+            
+            st.markdown("---")
+            st.caption("💡 **Note:** After admin approves your registration, your Patient ID will appear here. Save it for future logins.")
+            st.caption("📱 **How to receive your ID:** Check this page after admin approval. Your Patient ID will be displayed here.")
         
         st.markdown("---")
         st.markdown("<center><small>© 2026 ICT Health | Secure Hospital Management System</small></center>", unsafe_allow_html=True)
