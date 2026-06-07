@@ -1,7 +1,7 @@
 """
 ICT in Health - Hospital Management System
-With Admin, Doctor & Patient Portals
-Appointment Request/Accept Workflow + Edit/Delete Options
+With Patient Self-Registration + Admin Approval
+Admin generates Patient ID after approval
 """
 
 import streamlit as st
@@ -13,6 +13,7 @@ import os
 import base64
 import hashlib
 import json
+import random
 
 # Import chatbot module
 from chatbot import chatbot_ui
@@ -206,6 +207,14 @@ st.markdown("""
     .status-pending { background: #fef3c7; color: #d97706; }
     .status-accepted { background: #d1fae5; color: #059669; }
     .status-declined { background: #fee2e2; color: #dc2626; }
+    
+    .pending-approval {
+        background: #fef3c7;
+        border-left: 5px solid #f59e0b;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -218,7 +227,7 @@ def hash_password(password):
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD_HASH = hash_password("12345")
 
-# Doctor credentials - Updated with individual passwords
+# Doctor credentials
 DOCTORS = {
     "cardiologist": {
         "name": "Dr. Sarah Ahmed", 
@@ -264,7 +273,6 @@ def login_admin(username, password):
     return username == ADMIN_USERNAME and hash_password(password) == ADMIN_PASSWORD_HASH
 
 def login_doctor(username, password):
-    # Convert username to lowercase for case-insensitive matching
     username_lower = username.lower()
     for doc_key in DOCTORS.keys():
         if doc_key.lower() == username_lower and DOCTORS[doc_key]["password_hash"] == hash_password(password):
@@ -277,6 +285,55 @@ def verify_patient(patient_id, patient_name):
         if patient['patient_id'] == patient_id and patient['name'].lower() == patient_name.lower() and patient.get('active', True):
             return True, patient['name']
     return False, None
+
+# ==================== REGISTRATION REQUESTS FUNCTIONS ====================
+
+REQUESTS_FILE = os.path.join("hospital_data", "registration_requests.json")
+
+def save_requests():
+    with open(REQUESTS_FILE, 'w') as f:
+        json.dump(st.session_state.registration_requests, f, indent=2)
+
+def load_requests():
+    if os.path.exists(REQUESTS_FILE):
+        with open(REQUESTS_FILE, 'r') as f:
+            st.session_state.registration_requests = json.load(f)
+    else:
+        st.session_state.registration_requests = []
+
+def add_registration_request(name, age, gender, contact, address, reason):
+    request = {
+        'id': len(st.session_state.registration_requests) + 1,
+        'name': name,
+        'age': age,
+        'gender': gender,
+        'contact': contact,
+        'address': address,
+        'reason': reason,
+        'status': 'pending',
+        'submitted_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'assigned_id': None
+    }
+    st.session_state.registration_requests.append(request)
+    save_requests()
+    return True
+
+def approve_request(request_id, patient_id):
+    for req in st.session_state.registration_requests:
+        if req['id'] == request_id:
+            req['status'] = 'approved'
+            req['assigned_id'] = patient_id
+            # Add to patients list
+            add_patient(patient_id, req['name'], req['age'], req['gender'], req['contact'], req['address'])
+            break
+    save_requests()
+
+def reject_request(request_id):
+    for req in st.session_state.registration_requests:
+        if req['id'] == request_id:
+            req['status'] = 'rejected'
+            break
+    save_requests()
 
 # ==================== REMINDER FUNCTIONS ====================
 
@@ -390,10 +447,17 @@ def init_session_state():
 
 init_session_state()
 load_reminders()
+load_requests()
 
 # ==================== HELPER FUNCTIONS ====================
 
 def add_patient(patient_id, name, age, gender, contact, address):
+    # Check if patient ID already exists
+    existing_ids = [p['patient_id'] for p in st.session_state.patients]
+    if patient_id in existing_ids:
+        # Generate new unique ID
+        patient_id = generate_unique_id()
+    
     new_patient = {
         'patient_id': patient_id,
         'name': name,
@@ -406,7 +470,16 @@ def add_patient(patient_id, name, age, gender, contact, address):
     }
     st.session_state.patients.append(new_patient)
     save_patients(st.session_state.patients)
-    return True
+    return patient_id
+
+def generate_unique_id():
+    """Generate a unique patient ID"""
+    existing_ids = [p['patient_id'] for p in st.session_state.patients]
+    prefix = "PAT"
+    counter = 1
+    while f"{prefix}{counter:03d}" in existing_ids:
+        counter += 1
+    return f"{prefix}{counter:03d}"
 
 def update_patient(patient_id, name, age, gender, contact, address):
     for i, p in enumerate(st.session_state.patients):
@@ -421,7 +494,6 @@ def update_patient(patient_id, name, age, gender, contact, address):
 
 def delete_patient(patient_id):
     st.session_state.patients = [p for p in st.session_state.patients if p['patient_id'] != patient_id]
-    # Also delete related data
     st.session_state.vitals = [v for v in st.session_state.vitals if v['patient_id'] != patient_id]
     st.session_state.medications = [m for m in st.session_state.medications if m['patient_id'] != patient_id]
     st.session_state.appointments = [a for a in st.session_state.appointments if a['patient_id'] != patient_id]
@@ -536,7 +608,7 @@ def show_login_page():
         </div>
         """, unsafe_allow_html=True)
         
-        tab1, tab2, tab3 = st.tabs(["👨‍💼 Admin Login", "👨‍⚕️ Doctor Login", "👤 Patient Login"])
+        tab1, tab2, tab3, tab4 = st.tabs(["👨‍💼 Admin Login", "👨‍⚕️ Doctor Login", "👤 Patient Login", "📝 New Patient Registration"])
         
         with tab1:
             admin_username = st.text_input("Username", key="admin_user", placeholder="admin")
@@ -566,6 +638,7 @@ def show_login_page():
                     st.error("❌ Invalid doctor credentials!")
         
         with tab3:
+            st.info("🔐 Patient Login - Use the Patient ID provided by admin after registration approval")
             col1, col2 = st.columns(2)
             with col1:
                 patient_id = st.text_input("Patient ID", key="patient_id", placeholder="e.g., PAT001")
@@ -581,9 +654,41 @@ def show_login_page():
                         st.session_state.current_patient_name = name
                         st.rerun()
                     else:
-                        st.error("❌ Invalid Patient ID or Name!")
+                        st.error("❌ Invalid Patient ID or Name! Please wait for admin approval.")
                 else:
                     st.warning("⚠️ Please enter both fields")
+        
+        with tab4:
+            st.header("📝 Patient Self Registration")
+            st.info("Register yourself online. After admin approval, you will receive a Patient ID to access your portal.")
+            
+            with st.form("self_registration_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    name = st.text_input("Full Name*")
+                    age = st.number_input("Age*", min_value=0, max_value=150)
+                    gender = st.selectbox("Gender*", ["Male", "Female", "Other"])
+                with col2:
+                    contact = st.text_input("Contact Number*")
+                    address = st.text_area("Address*")
+                reason = st.text_area("Reason for Registration / Any Health Concerns", height=100, 
+                                     placeholder="Please describe any health concerns or reason for registration...")
+                
+                st.warning("⚠️ Your registration will be reviewed by admin. You will receive a Patient ID via this portal after approval.")
+                
+                submitted = st.form_submit_button("Submit Registration Request")
+                
+                if submitted:
+                    if name and age and contact and address:
+                        add_registration_request(name, age, gender, contact, address, reason)
+                        st.success("✅ Registration request submitted successfully! Admin will review and approve your registration.")
+                        st.info("📌 Please check back later for your Patient ID. You will use it to login to your portal.")
+                        st.balloons()
+                    else:
+                        st.warning("Please fill all required fields (*)")
+        
+        st.markdown("---")
+        st.markdown("<center><small>© 2026 ICT Health | Secure Hospital Management System</small></center>", unsafe_allow_html=True)
 
 # ==================== SIDEBAR NAVIGATION ====================
 
@@ -604,10 +709,15 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
+            pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending'])
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-number">{len(st.session_state.patients)}</div>
                 <div class="stat-label">Total Patients</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{pending_requests}</div>
+                <div class="stat-label">Pending Approvals</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{len([a for a in st.session_state.appointments if a['status'] == 'pending'])}</div>
@@ -618,9 +728,10 @@ def render_sidebar():
             st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 MAIN MENU</div>", unsafe_allow_html=True)
             
             menu_items = [
-                "📊 Dashboard", "👨‍👩‍👧 Patient Registration", "🩺 Record Vitals",
-                "💊 Medications", "📅 Appointments", "📈 Analytics",
-                "📄 Reports", "⏰ Medicine Reminders", "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
+                "📊 Dashboard", "📝 Pending Approvals", "👨‍👩‍👧 Patient Management",
+                "🩺 Record Vitals", "💊 Medications", "📅 Appointments",
+                "📈 Analytics", "📄 Reports", "⏰ Medicine Reminders",
+                "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
             ]
             
         elif st.session_state.user_type == "doctor":
@@ -765,6 +876,52 @@ def show_reminder_management():
     else:
         st.info("No reminders set. Add a reminder above!")
 
+# ==================== PENDING APPROVALS (ADMIN) ====================
+
+def show_pending_approvals():
+    st.header("📝 Pending Patient Registration Approvals")
+    
+    pending_requests = [r for r in st.session_state.registration_requests if r['status'] == 'pending']
+    
+    if not pending_requests:
+        st.info("No pending registration requests.")
+        return
+    
+    for req in pending_requests:
+        with st.container():
+            st.markdown(f"""
+            <div class="pending-approval">
+                <strong>📅 Submitted:</strong> {req['submitted_date']}<br>
+                <strong>👤 Name:</strong> {req['name']}<br>
+                <strong>🎂 Age:</strong> {req['age']} | <strong>⚧ Gender:</strong> {req['gender']}<br>
+                <strong>📞 Contact:</strong> {req['contact']}<br>
+                <strong>📍 Address:</strong> {req['address']}<br>
+                <strong>📝 Reason for Registration:</strong> {req['reason'] if req['reason'] else 'Not specified'}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                # Suggest a patient ID
+                suggested_id = generate_unique_id()
+                patient_id = st.text_input(f"Patient ID for {req['name']}", value=suggested_id, key=f"id_{req['id']}")
+            
+            with col2:
+                if st.button("✅ Approve", key=f"approve_{req['id']}"):
+                    approve_request(req['id'], patient_id)
+                    st.success(f"✅ Patient {req['name']} approved! Patient ID: {patient_id}")
+                    st.info(f"📌 Patient can now login using ID: {patient_id} and Name: {req['name']}")
+                    st.rerun()
+            
+            with col3:
+                if st.button("❌ Reject", key=f"reject_{req['id']}"):
+                    reject_request(req['id'])
+                    st.warning(f"❌ Registration request from {req['name']} rejected")
+                    st.rerun()
+            
+            st.markdown("---")
+
 # ==================== ADMIN DASHBOARD ====================
 
 def show_admin_dashboard():
@@ -787,39 +944,25 @@ def show_admin_dashboard():
             pending = len([a for a in st.session_state.appointments if a.get('status') == 'pending'])
             st.markdown(f'<div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending Appointments</div></div>', unsafe_allow_html=True)
         
+        # Pending approvals summary
+        pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending'])
+        if pending_requests > 0:
+            st.warning(f"📝 You have {pending_requests} pending patient registration approvals. Go to 'Pending Approvals' to review.")
+        
         if st.session_state.patients:
             st.subheader("📋 All Registered Patients")
             df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
             st.dataframe(df, use_container_width=True)
     
-    elif menu == "👨‍👩‍👧 Patient Registration":
+    elif menu == "📝 Pending Approvals":
+        show_pending_approvals()
+    
+    elif menu == "👨‍👩‍👧 Patient Management":
         st.header("📝 Patient Management")
         
-        tab1, tab2, tab3 = st.tabs(["➕ Register New", "✏️ Edit Patient", "🗑️ Delete Patient"])
+        tab1, tab2, tab3 = st.tabs(["✏️ Edit Patient", "🗑️ Delete Patient", "📋 All Patients"])
         
         with tab1:
-            with st.form("reg_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    pid = st.text_input("Patient ID (Unique)")
-                    name = st.text_input("Full Name")
-                    age = st.number_input("Age", min_value=0, max_value=150)
-                with col2:
-                    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-                    contact = st.text_input("Contact")
-                    address = st.text_area("Address")
-                if st.form_submit_button("Register Patient"):
-                    if pid and name:
-                        if pid in [p['patient_id'] for p in st.session_state.patients]:
-                            st.error("❌ Patient ID already exists!")
-                        else:
-                            add_patient(pid, name, age, gender, contact, address)
-                            st.success(f"✅ {name} registered! Login ID: {pid}, Name: {name}")
-                            st.balloons()
-                    else:
-                        st.warning("Please fill required fields")
-        
-        with tab2:
             patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
             if patients:
                 selected_patient = st.selectbox("Select Patient to Edit", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
@@ -841,7 +984,7 @@ def show_admin_dashboard():
             else:
                 st.info("No patients registered")
         
-        with tab3:
+        with tab2:
             patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
             if patients:
                 selected_patient = st.selectbox("Select Patient to Delete", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
@@ -855,10 +998,10 @@ def show_admin_dashboard():
             else:
                 st.info("No patients registered")
         
-        st.subheader("📋 Registered Patients")
-        if st.session_state.patients:
-            df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
-            st.dataframe(df, use_container_width=True)
+        with tab3:
+            if st.session_state.patients:
+                df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
+                st.dataframe(df, use_container_width=True)
     
     elif menu == "📅 Appointments":
         st.header("📅 Manage Appointments")
@@ -887,7 +1030,6 @@ def show_admin_dashboard():
             df['patient_name'] = df['patient_id'].map(patient_names)
             st.dataframe(df[['id', 'date_time', 'patient_name', 'doctor_name', 'reason', 'status']], use_container_width=True)
             
-            # Delete appointment option
             appointment_ids = [a.get('id') for a in st.session_state.appointments]
             if appointment_ids:
                 del_id = st.selectbox("Select Appointment ID to Delete", appointment_ids)
@@ -902,8 +1044,51 @@ def show_admin_dashboard():
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
     
+    elif menu == "💾 Backup/Restore":
+        st.header("💾 Backup & Restore")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Create Backup"):
+                import zipfile, io
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, 'w') as zf:
+                    for f in os.listdir(DATA_FOLDER):
+                        zf.write(os.path.join(DATA_FOLDER, f), f)
+                b64 = base64.b64encode(buf.getvalue()).decode()
+                st.markdown(f'<a href="data:application/zip;base64,{b64}" download="backup.zip">📥 Download Backup</a>', unsafe_allow_html=True)
+        with col2:
+            uploaded = st.file_uploader("Restore", type=['zip'])
+            if uploaded:
+                import zipfile, io
+                with zipfile.ZipFile(io.BytesIO(uploaded.read()), 'r') as zf:
+                    zf.extractall(DATA_FOLDER)
+                st.rerun()
+    
+    elif menu == "ℹ️ About":
+        st.header("🌐 About ICT Health")
+        st.markdown("""
+        **ICT in Health - Hospital Management System**
+        
+        Features:
+        - Patient Self Registration with Admin Approval
+        - Admin generates Unique Patient ID
+        - Secure Admin, Doctor & Patient Portals
+        - Vitals Tracking (BP, Sugar, Heart Rate)
+        - Medication Prescription & Tracking
+        - Medicine Reminders with Alarm
+        - Appointment Request/Accept Workflow
+        - Health Analytics Dashboard
+        - PDF Reports Generation
+        - AI Health Assistant Chatbot
+        
+        **Access Credentials:**
+        - **Admin:** `admin` / `12345`
+        - **Doctors:** `cardiologist` / `cardiologist`, `general physician` / `general physician`, `neurologist` / `neurologist`
+        - **Patient:** Use Patient ID (generated after admin approval) + Registered Name
+        """)
+    
     else:
-        # Other menus remain same as before
+        # Other menus (Record Vitals, Medications, Analytics, Reports)
         if menu == "🩺 Record Vitals":
             st.header("🩺 Record Patient Vitals")
             if st.session_state.patients:
@@ -982,51 +1167,6 @@ VITALS HISTORY:
                     st.text_area("Report", report, height=400)
                     b64 = base64.b64encode(report.encode()).decode()
                     st.markdown(f'<a href="data:text/plain;base64,{b64}" download="report_{selected}.txt">📥 Download Report</a>', unsafe_allow_html=True)
-        
-        elif menu == "💾 Backup/Restore":
-            st.header("💾 Backup & Restore")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Create Backup"):
-                    import zipfile, io
-                    buf = io.BytesIO()
-                    with zipfile.ZipFile(buf, 'w') as zf:
-                        for f in os.listdir(DATA_FOLDER):
-                            zf.write(os.path.join(DATA_FOLDER, f), f)
-                    b64 = base64.b64encode(buf.getvalue()).decode()
-                    st.markdown(f'<a href="data:application/zip;base64,{b64}" download="backup.zip">📥 Download Backup</a>', unsafe_allow_html=True)
-            with col2:
-                uploaded = st.file_uploader("Restore", type=['zip'])
-                if uploaded:
-                    import zipfile, io
-                    with zipfile.ZipFile(io.BytesIO(uploaded.read()), 'r') as zf:
-                        zf.extractall(DATA_FOLDER)
-                    st.rerun()
-        
-        elif menu == "ℹ️ About":
-            st.header("🌐 About ICT Health")
-            st.markdown("""
-            **ICT in Health - Hospital Management System**
-            
-            Features:
-            - Secure Admin, Doctor & Patient Portals
-            - Patient Registration with Edit/Delete
-            - Doctor Appointment Request/Accept Workflow
-            - Vitals Tracking (BP, Sugar, Heart Rate)
-            - Medication Prescription & Tracking
-            - Medicine Reminders with Alarm
-            - Health Analytics Dashboard
-            - PDF Reports Generation
-            - AI Health Assistant Chatbot
-            
-            **Access Credentials:**
-            - **Admin:** Username: `admin` | Password: `12345`
-            - **Doctors:** 
-              - Cardiologist: `cardiologist` / `cardiologist`
-              - General Physician: `general physician` / `general physician`
-              - Neurologist: `neurologist` / `neurologist`
-            - **Patient:** Use registered Patient ID + Name
-            """)
 
 # ==================== DOCTOR PORTAL ====================
 
@@ -1055,7 +1195,6 @@ def show_doctor_portal():
             patients_count = len(set([a['patient_id'] for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted']))
             st.markdown(f'<div class="metric-card"><div class="metric-value">{patients_count}</div><div class="metric-label">Your Patients</div></div>', unsafe_allow_html=True)
         
-        # Today's appointments
         today = date.today().strftime("%Y-%m-%d")
         today_appointments = [a for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted' and today in a.get('date_time', '')]
         if today_appointments:
@@ -1139,7 +1278,6 @@ def show_doctor_portal():
                         st.write(f"**Contact:** {patient.get('contact', 'N/A')}")
                         st.write(f"**Address:** {patient.get('address', 'N/A')}")
                         
-                        # Show patient vitals
                         patient_vitals = [v for v in st.session_state.vitals if v['patient_id'] == pid]
                         if patient_vitals:
                             st.write("**Recent Vitals:**")
@@ -1161,11 +1299,6 @@ def show_doctor_portal():
         - ✅ View your schedule and patient list
         - ✅ Access patient health records
         - ✅ AI Health Assistant for clinical support
-        
-        **Your Info:**
-        - You can set your availability status
-        - Appear in admin's doctor list
-        - Patients can request appointments with you
         """)
 
 # ==================== PATIENT PORTAL ====================
@@ -1190,7 +1323,6 @@ def show_patient_portal():
         with col3:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(patient_appointments)}</div><div class="metric-label">Appointments</div></div>', unsafe_allow_html=True)
         
-        # Show appointment status
         pending_appointments = [a for a in patient_appointments if a['status'] == 'pending']
         accepted_appointments = [a for a in patient_appointments if a['status'] == 'accepted']
         
@@ -1229,7 +1361,6 @@ def show_patient_portal():
         chatbot_ui()
     
     else:
-        # Other menus remain same
         if menu == "🩺 My Vitals" and patient_vitals:
             df = pd.DataFrame(patient_vitals)
             st.dataframe(df, use_container_width=True)
