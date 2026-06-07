@@ -1,14 +1,14 @@
 """
 ICT in Health - Hospital Management System
-With Secure Login: Admin Portal + Patient Portal (ID + Name only)
-Beautiful Sidebar Navigation + Medicine Reminders with Alarm
+With Admin, Doctor & Patient Portals
+Appointment Request/Accept Workflow + Edit/Delete Options
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, date, timedelta
 import os
 import base64
 import hashlib
@@ -29,7 +29,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* Sidebar styling */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0f2b1f 0%, #1a4a2a 50%, #0f2b1f 100%);
         padding-top: 20px;
@@ -164,10 +163,19 @@ st.markdown("""
         border-left: 5px solid #f59e0b;
     }
     
-    .reminder-time {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: #d97706;
+    .appointment-pending {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border-left: 5px solid #f59e0b;
+    }
+    
+    .appointment-accepted {
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+        border-left: 5px solid #10b981;
+    }
+    
+    .appointment-declined {
+        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+        border-left: 5px solid #ef4444;
     }
 
     [data-testid="stSidebar"] .stSelectbox > div > div {
@@ -188,14 +196,16 @@ st.markdown("""
         display: none !important;
     }
     
-    .alarm-badge {
-        background: #ef4444;
-        color: white;
-        border-radius: 50%;
-        padding: 2px 8px;
+    .status-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 20px;
         font-size: 0.7rem;
-        margin-left: 8px;
+        font-weight: bold;
     }
+    .status-pending { background: #fef3c7; color: #d97706; }
+    .status-accepted { background: #d1fae5; color: #059669; }
+    .status-declined { background: #fee2e2; color: #dc2626; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -204,14 +214,24 @@ st.markdown("""
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+# Admin credentials
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD_HASH = hash_password("12345")
+
+# Doctor credentials
+DOCTORS = {
+    "doctor": {"name": "Dr. Sarah Ahmed", "password_hash": hash_password("doctor123"), "specialty": "Cardiologist", "available": True},
+    "doctor2": {"name": "Dr. Ali Raza", "password_hash": hash_password("doctor123"), "specialty": "General Physician", "available": True},
+    "doctor3": {"name": "Dr. Fatima Khan", "password_hash": hash_password("doctor123"), "specialty": "Pediatrician", "available": True}
+}
 
 def init_auth():
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'user_type' not in st.session_state:
         st.session_state.user_type = None
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = None
     if 'current_patient_id' not in st.session_state:
         st.session_state.current_patient_id = None
     if 'current_patient_name' not in st.session_state:
@@ -228,10 +248,15 @@ init_auth()
 def login_admin(username, password):
     return username == ADMIN_USERNAME and hash_password(password) == ADMIN_PASSWORD_HASH
 
+def login_doctor(username, password):
+    if username in DOCTORS and DOCTORS[username]["password_hash"] == hash_password(password):
+        return True, DOCTORS[username]["name"]
+    return False, None
+
 def verify_patient(patient_id, patient_name):
     patients = st.session_state.patients
     for patient in patients:
-        if patient['patient_id'] == patient_id and patient['name'].lower() == patient_name.lower():
+        if patient['patient_id'] == patient_id and patient['name'].lower() == patient_name.lower() and patient.get('active', True):
             return True, patient['name']
     return False, None
 
@@ -240,18 +265,15 @@ def verify_patient(patient_id, patient_name):
 REMINDERS_FILE = os.path.join("hospital_data", "reminders.json")
 
 def save_reminders():
-    """Save reminders to JSON file"""
     with open(REMINDERS_FILE, 'w') as f:
         json.dump(st.session_state.reminders, f, indent=2)
 
 def load_reminders():
-    """Load reminders from JSON file"""
     if os.path.exists(REMINDERS_FILE):
         with open(REMINDERS_FILE, 'r') as f:
             st.session_state.reminders = json.load(f)
 
 def add_reminder(patient_id, medicine_name, reminder_time, dosage):
-    """Add a new medicine reminder"""
     reminder = {
         'id': len(st.session_state.reminders) + 1,
         'patient_id': patient_id,
@@ -266,37 +288,15 @@ def add_reminder(patient_id, medicine_name, reminder_time, dosage):
     return True
 
 def delete_reminder(reminder_id):
-    """Delete a reminder"""
     st.session_state.reminders = [r for r in st.session_state.reminders if r['id'] != reminder_id]
     save_reminders()
 
 def toggle_reminder(reminder_id):
-    """Toggle reminder active status"""
     for r in st.session_state.reminders:
         if r['id'] == reminder_id:
             r['active'] = not r['active']
             break
     save_reminders()
-
-def check_and_show_reminders():
-    """Check if any reminders are due and show notification"""
-    if st.session_state.user_type == "patient":
-        patient_id = st.session_state.current_patient_id
-        current_time = datetime.now().strftime("%H:%M")
-        
-        # Check if we already showed notification for this minute
-        if st.session_state.reminder_check_time == current_time:
-            return
-        
-        st.session_state.reminder_check_time = current_time
-        
-        for reminder in st.session_state.reminders:
-            if (reminder['patient_id'] == patient_id and 
-                reminder['active'] and 
-                reminder['reminder_time'] == current_time):
-                
-                # Show alert using Streamlit toast
-                st.toast(f"💊 Time to take {reminder['medicine_name']} ({reminder['dosage']})", icon="🔔")
 
 # ==================== FILE STORAGE FUNCTIONS ====================
 
@@ -383,11 +383,36 @@ def add_patient(patient_id, name, age, gender, contact, address):
         'gender': gender,
         'contact': contact,
         'address': address,
-        'registration_date': datetime.now().strftime("%Y-%m-%d %H:%M")
+        'registration_date': datetime.now().strftime("%Y-%m-%d %H:%M"),
+        'active': True
     }
     st.session_state.patients.append(new_patient)
     save_patients(st.session_state.patients)
     return True
+
+def update_patient(patient_id, name, age, gender, contact, address):
+    for i, p in enumerate(st.session_state.patients):
+        if p['patient_id'] == patient_id:
+            st.session_state.patients[i].update({
+                'name': name, 'age': age, 'gender': gender, 
+                'contact': contact, 'address': address,
+                'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M")
+            })
+            break
+    save_patients(st.session_state.patients)
+
+def delete_patient(patient_id):
+    st.session_state.patients = [p for p in st.session_state.patients if p['patient_id'] != patient_id]
+    # Also delete related data
+    st.session_state.vitals = [v for v in st.session_state.vitals if v['patient_id'] != patient_id]
+    st.session_state.medications = [m for m in st.session_state.medications if m['patient_id'] != patient_id]
+    st.session_state.appointments = [a for a in st.session_state.appointments if a['patient_id'] != patient_id]
+    st.session_state.reminders = [r for r in st.session_state.reminders if r['patient_id'] != patient_id]
+    save_patients(st.session_state.patients)
+    save_vitals(st.session_state.vitals)
+    save_medications(st.session_state.medications)
+    save_appointments(st.session_state.appointments)
+    save_reminders()
 
 def add_vitals(patient_id, bp_sys, bp_dia, heart_rate, blood_sugar, weight, notes=""):
     new_vital = {
@@ -416,15 +441,30 @@ def add_medication(patient_id, med_name, dosage, frequency, start_date, end_date
     st.session_state.medications.append(new_med)
     save_medications(st.session_state.medications)
 
-def add_appointment(patient_id, doctor, date_time, reason):
+def add_appointment(patient_id, doctor_username, doctor_name, appointment_date, reason):
     new_appointment = {
+        'id': len(st.session_state.appointments) + 1,
         'patient_id': patient_id,
-        'doctor': doctor,
-        'date_time': date_time,
+        'doctor_username': doctor_username,
+        'doctor_name': doctor_name,
+        'date_time': appointment_date,
         'reason': reason,
-        'status': 'scheduled'
+        'status': 'pending',
+        'created_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     st.session_state.appointments.append(new_appointment)
+    save_appointments(st.session_state.appointments)
+
+def update_appointment_status(appointment_id, status):
+    for a in st.session_state.appointments:
+        if a.get('id') == appointment_id:
+            a['status'] = status
+            a['responded_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+    save_appointments(st.session_state.appointments)
+
+def delete_appointment(appointment_id):
+    st.session_state.appointments = [a for a in st.session_state.appointments if a.get('id') != appointment_id]
     save_appointments(st.session_state.appointments)
 
 def get_patient_data(patient_id):
@@ -433,9 +473,16 @@ def get_patient_data(patient_id):
     patient_appointments = [a for a in st.session_state.appointments if a['patient_id'] == patient_id]
     return patient_vitals, patient_meds, patient_appointments
 
+def get_patient_by_id(patient_id):
+    for p in st.session_state.patients:
+        if p['patient_id'] == patient_id:
+            return p
+    return None
+
 def logout():
     st.session_state.logged_in = False
     st.session_state.user_type = None
+    st.session_state.current_user = None
     st.session_state.current_patient_id = None
     st.session_state.current_patient_name = None
     st.session_state.selected_menu = "📊 Dashboard"
@@ -471,7 +518,7 @@ def show_login_page():
         </div>
         """, unsafe_allow_html=True)
         
-        tab1, tab2 = st.tabs(["👨‍💼 Admin Login", "👤 Patient Login"])
+        tab1, tab2, tab3 = st.tabs(["👨‍💼 Admin Login", "👨‍⚕️ Doctor Login", "👤 Patient Login"])
         
         with tab1:
             admin_username = st.text_input("Username", key="admin_user", placeholder="admin")
@@ -480,11 +527,27 @@ def show_login_page():
                 if login_admin(admin_username, admin_password):
                     st.session_state.logged_in = True
                     st.session_state.user_type = "admin"
+                    st.session_state.current_user = "admin"
                     st.rerun()
                 else:
                     st.error("❌ Invalid admin credentials!")
         
         with tab2:
+            st.info("Available Doctors: doctor, doctor2, doctor3 (Password: doctor123)")
+            doctor_username = st.text_input("Doctor Username", key="doctor_user", placeholder="doctor")
+            doctor_password = st.text_input("Password", type="password", key="doctor_pass", placeholder="•••••")
+            if st.button("🔐 Login as Doctor", key="doctor_login"):
+                valid, name = login_doctor(doctor_username, doctor_password)
+                if valid:
+                    st.session_state.logged_in = True
+                    st.session_state.user_type = "doctor"
+                    st.session_state.current_user = doctor_username
+                    st.session_state.current_user_name = name
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid doctor credentials!")
+        
+        with tab3:
             col1, col2 = st.columns(2)
             with col1:
                 patient_id = st.text_input("Patient ID", key="patient_id", placeholder="e.g., PAT001")
@@ -507,8 +570,6 @@ def show_login_page():
 # ==================== SIDEBAR NAVIGATION ====================
 
 def render_sidebar():
-    """Render beautiful sidebar with navigation buttons"""
-    
     with st.sidebar:
         st.markdown("""
         <div class="sidebar-header">
@@ -531,21 +592,47 @@ def render_sidebar():
                 <div class="stat-label">Total Patients</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">{len(st.session_state.vitals)}</div>
-                <div class="stat-label">Vitals Records</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{len([m for m in st.session_state.medications if m.get('status') == 'active'])}</div>
-                <div class="stat-label">Active Medications</div>
+                <div class="stat-number">{len([a for a in st.session_state.appointments if a['status'] == 'pending'])}</div>
+                <div class="stat-label">Pending Appointments</div>
             </div>
             """, unsafe_allow_html=True)
             
             st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 MAIN MENU</div>", unsafe_allow_html=True)
             
             menu_items = [
-                "📊 Dashboard", "👨‍👩‍👧 Register Patient", "🩺 Record Vitals",
+                "📊 Dashboard", "👨‍👩‍👧 Patient Registration", "🩺 Record Vitals",
                 "💊 Medications", "📅 Appointments", "📈 Analytics",
                 "📄 Reports", "⏰ Medicine Reminders", "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
+            ]
+            
+        elif st.session_state.user_type == "doctor":
+            doctor_info = DOCTORS.get(st.session_state.current_user, {})
+            st.markdown(f"""
+            <div class="user-card">
+                <h4>👨‍⚕️ {doctor_info.get('name', st.session_state.current_user)}</h4>
+                <p>{doctor_info.get('specialty', 'Doctor')}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            pending_count = len([a for a in st.session_state.appointments if a.get('doctor_username') == st.session_state.current_user and a['status'] == 'pending'])
+            accepted_count = len([a for a in st.session_state.appointments if a.get('doctor_username') == st.session_state.current_user and a['status'] == 'accepted'])
+            
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-number">{pending_count}</div>
+                <div class="stat-label">Pending Requests</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{accepted_count}</div>
+                <div class="stat-label">Accepted Appointments</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 DOCTOR PORTAL</div>", unsafe_allow_html=True)
+            
+            menu_items = [
+                "📊 Doctor Dashboard", "📅 Appointment Requests", "✅ My Appointments",
+                "👥 My Patients", "🤖 AI Assistant", "ℹ️ About"
             ]
             
         else:
@@ -599,12 +686,10 @@ def render_sidebar():
 # ==================== REMINDER UI COMPONENTS ====================
 
 def show_reminder_management():
-    """Show reminder management interface for admin and patient"""
     st.header("⏰ Medicine Reminder System")
     
     if st.session_state.user_type == "admin":
-        st.info("Admin can set reminders for patients. Select a patient below.")
-        patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
+        patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
         if patients:
             selected_patient = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
             show_patient = selected_patient
@@ -613,9 +698,7 @@ def show_reminder_management():
             return
     else:
         show_patient = st.session_state.current_patient_id
-        st.success(f"Set reminders for your medications, {st.session_state.current_patient_name}!")
     
-    # Add new reminder
     with st.expander("➕ Add New Medicine Reminder", expanded=True):
         with st.form("add_reminder_form"):
             col1, col2 = st.columns(2)
@@ -634,9 +717,7 @@ def show_reminder_management():
             elif submitted:
                 st.warning("Please enter medicine name")
     
-    # Show existing reminders
-    st.subheader("📋 Your Active Reminders")
-    
+    st.subheader("📋 Your Reminders")
     patient_reminders = [r for r in st.session_state.reminders if r['patient_id'] == show_patient]
     
     if patient_reminders:
@@ -650,7 +731,7 @@ def show_reminder_management():
                 with col3:
                     st.markdown(f"📦 {reminder['dosage']}")
                 with col4:
-                    status = "🔔 Active" if reminder['active'] else "🔕 Paused"
+                    status = "✅ Active" if reminder['active'] else "⏸️ Paused"
                     st.markdown(f"<span style='color: #10b981;'>{status}</span>", unsafe_allow_html=True)
                 
                 col1, col2, col3 = st.columns([1, 1, 4])
@@ -664,13 +745,12 @@ def show_reminder_management():
                         st.rerun()
                 st.markdown("---")
     else:
-        st.info("No reminders set. Add a reminder above to get medicine alerts!")
+        st.info("No reminders set. Add a reminder above!")
 
 # ==================== ADMIN DASHBOARD ====================
 
 def show_admin_dashboard():
     render_sidebar()
-    check_and_show_reminders()
     
     st.markdown('<div class="main-header"><h2>🏥 ICT Health - Admin Dashboard</h2><p>Complete Patient Data Access</p></div>', unsafe_allow_html=True)
     
@@ -686,198 +766,391 @@ def show_admin_dashboard():
             active = len([m for m in st.session_state.medications if m.get('status') == 'active'])
             st.markdown(f'<div class="metric-card"><div class="metric-value">{active}</div><div class="metric-label">Active Meds</div></div>', unsafe_allow_html=True)
         with col4:
-            st.markdown(f'<div class="metric-card"><div class="metric-value">{len(st.session_state.appointments)}</div><div class="metric-label">Appointments</div></div>', unsafe_allow_html=True)
-        
-        # Show active reminders count in dashboard
-        active_reminders = len([r for r in st.session_state.reminders if r['active']])
-        st.info(f"🔔 **Active Medicine Reminders:** {active_reminders} reminders set for patients")
+            pending = len([a for a in st.session_state.appointments if a.get('status') == 'pending'])
+            st.markdown(f'<div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending Appointments</div></div>', unsafe_allow_html=True)
         
         if st.session_state.patients:
             st.subheader("📋 All Registered Patients")
-            df = pd.DataFrame(st.session_state.patients)
+            df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
             st.dataframe(df, use_container_width=True)
     
-    elif menu == "👨‍👩‍👧 Register Patient":
-        st.header("📝 Register New Patient")
-        with st.form("reg_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                pid = st.text_input("Patient ID (Unique)")
-                name = st.text_input("Full Name")
-                age = st.number_input("Age", min_value=0, max_value=150)
-            with col2:
-                gender = st.selectbox("Gender", ["Male", "Female", "Other"])
-                contact = st.text_input("Contact")
-                address = st.text_area("Address")
-            if st.form_submit_button("Register"):
-                if pid and name:
-                    if pid in [p['patient_id'] for p in st.session_state.patients]:
-                        st.error("ID exists!")
+    elif menu == "👨‍👩‍👧 Patient Registration":
+        st.header("📝 Patient Management")
+        
+        tab1, tab2, tab3 = st.tabs(["➕ Register New", "✏️ Edit Patient", "🗑️ Delete Patient"])
+        
+        with tab1:
+            with st.form("reg_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    pid = st.text_input("Patient ID (Unique)")
+                    name = st.text_input("Full Name")
+                    age = st.number_input("Age", min_value=0, max_value=150)
+                with col2:
+                    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+                    contact = st.text_input("Contact")
+                    address = st.text_area("Address")
+                if st.form_submit_button("Register Patient"):
+                    if pid and name:
+                        if pid in [p['patient_id'] for p in st.session_state.patients]:
+                            st.error("❌ Patient ID already exists!")
+                        else:
+                            add_patient(pid, name, age, gender, contact, address)
+                            st.success(f"✅ {name} registered! Login ID: {pid}, Name: {name}")
+                            st.balloons()
                     else:
-                        add_patient(pid, name, age, gender, contact, address)
-                        st.success(f"✅ {name} registered! Login ID: {pid}, Name: {name}")
-                        st.balloons()
-                else:
-                    st.warning("Fill required fields")
+                        st.warning("Please fill required fields")
+        
+        with tab2:
+            patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+            if patients:
+                selected_patient = st.selectbox("Select Patient to Edit", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+                patient_data = get_patient_by_id(selected_patient)
+                if patient_data:
+                    with st.form("edit_form"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            name = st.text_input("Full Name", value=patient_data['name'])
+                            age = st.number_input("Age", min_value=0, max_value=150, value=patient_data['age'])
+                        with col2:
+                            gender = st.selectbox("Gender", ["Male", "Female", "Other"], index=["Male", "Female", "Other"].index(patient_data['gender']))
+                            contact = st.text_input("Contact", value=patient_data.get('contact', ''))
+                            address = st.text_area("Address", value=patient_data.get('address', ''))
+                        if st.form_submit_button("Update Patient"):
+                            update_patient(selected_patient, name, age, gender, contact, address)
+                            st.success("✅ Patient updated successfully!")
+                            st.rerun()
+            else:
+                st.info("No patients registered")
+        
+        with tab3:
+            patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+            if patients:
+                selected_patient = st.selectbox("Select Patient to Delete", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+                if st.button("🗑️ Permanently Delete Patient", use_container_width=True):
+                    if st.checkbox("I understand this action cannot be undone"):
+                        delete_patient(selected_patient)
+                        st.success(f"✅ Patient {selected_patient} deleted successfully!")
+                        st.rerun()
+                    else:
+                        st.warning("Please confirm deletion")
+            else:
+                st.info("No patients registered")
         
         st.subheader("📋 Registered Patients")
         if st.session_state.patients:
-            df = pd.DataFrame(st.session_state.patients)
+            df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
             st.dataframe(df, use_container_width=True)
     
-    elif menu == "🩺 Record Vitals":
-        st.header("🩺 Record Patient Vitals")
-        if st.session_state.patients:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
-            selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            with st.form("vitals_form"):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    sys = st.number_input("Systolic BP", 50, 250, 120)
-                    dia = st.number_input("Diastolic BP", 30, 150, 80)
-                with col2:
-                    hr = st.number_input("Heart Rate", 30, 200, 75)
-                    bs = st.number_input("Blood Sugar", 0, 600, 100)
-                with col3:
-                    wt = st.number_input("Weight (kg)", 0, 300, 70)
-                notes = st.text_area("Notes")
-                if st.form_submit_button("Save"):
-                    add_vitals(selected, sys, dia, hr, bs, wt, notes)
-                    st.success("✅ Vitals saved!")
-    
-    elif menu == "💊 Medications":
-        st.header("💊 Prescribe Medication")
-        if st.session_state.patients:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
-            selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            with st.form("med_form"):
-                med = st.text_input("Medication Name")
-                dose = st.text_input("Dosage")
-                freq = st.selectbox("Frequency", ["Once daily", "Twice daily", "Three times daily"])
-                col1, col2 = st.columns(2)
-                with col1:
-                    start = st.date_input("Start Date")
-                with col2:
-                    end = st.date_input("End Date")
-                if st.form_submit_button("Prescribe") and med:
-                    add_medication(selected, med, dose, freq, str(start), str(end))
-                    st.success(f"✅ {med} prescribed!")
-    
     elif menu == "📅 Appointments":
-        st.header("📅 Schedule Appointment")
-        if st.session_state.patients:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
-            selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            with st.form("app_form"):
-                doctor = st.text_input("Doctor Name")
-                date_time = st.datetime_input("Date & Time")
-                reason = st.text_area("Reason")
-                if st.form_submit_button("Schedule"):
-                    add_appointment(selected, doctor, str(date_time), reason)
-                    st.success("✅ Appointment scheduled!")
-    
-    elif menu == "📈 Analytics":
-        st.header("📊 Health Analytics")
-        if st.session_state.vitals:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
-            selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            df = pd.DataFrame(st.session_state.vitals)
-            df['date'] = pd.to_datetime(df['date'])
-            df_patient = df[df['patient_id'] == selected].sort_values('date')
-            if not df_patient.empty:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_systolic'], name='Systolic'))
-                fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_diastolic'], name='Diastolic'))
-                fig.update_layout(title=f"BP Trend - {patients[selected]}")
-                st.plotly_chart(fig, use_container_width=True)
+        st.header("📅 Manage Appointments")
+        
+        with st.form("appointment_form"):
+            patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+            if not patients:
+                st.warning("No patients registered")
+            else:
+                selected_patient = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    fig2 = px.line(df_patient, x='date', y='heart_rate', title="Heart Rate")
-                    st.plotly_chart(fig2, use_container_width=True)
-                with col2:
-                    fig3 = px.line(df_patient, x='date', y='blood_sugar', title="Blood Sugar")
-                    st.plotly_chart(fig3, use_container_width=True)
-    
-    elif menu == "📄 Reports":
-        st.header("📄 Generate Report")
-        if st.session_state.patients:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients}
-            selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            if st.button("Generate Report"):
-                patient = next(p for p in st.session_state.patients if p['patient_id'] == selected)
-                vitals = [v for v in st.session_state.vitals if v['patient_id'] == selected]
-                meds = [m for m in st.session_state.medications if m['patient_id'] == selected]
-                report = f"""
-                ICT HEALTH REPORT
-                =================
-                Patient: {patient['name']} (ID: {selected})
-                Age: {patient['age']} | Gender: {patient['gender']}
-                Contact: {patient['contact']}
+                doctor_options = {username: f"{info['name']} ({info['specialty']})" for username, info in DOCTORS.items()}
+                selected_doctor = st.selectbox("Select Doctor", list(doctor_options.keys()), format_func=lambda x: doctor_options[x])
                 
-                VITALS HISTORY:
-                """
-                for v in vitals[-10:]:
-                    report += f"\n{v['date']}: BP {v['bp_systolic']}/{v['bp_diastolic']}, HR {v['heart_rate']}, BS {v['blood_sugar']}"
-                report += "\n\nMEDICATIONS:\n"
-                for m in meds:
-                    report += f"\n{m['med_name']}: {m['dosage']} ({m['frequency']})"
-                st.text_area("Report", report, height=400)
-                b64 = base64.b64encode(report.encode()).decode()
-                st.markdown(f'<a href="data:text/plain;base64,{b64}" download="report_{selected}.txt">📥 Download Report</a>', unsafe_allow_html=True)
+                appointment_date = st.datetime_input("Appointment Date & Time")
+                reason = st.text_area("Reason for Visit")
+                
+                if st.form_submit_button("Send Appointment Request"):
+                    add_appointment(selected_patient, selected_doctor, DOCTORS[selected_doctor]["name"], str(appointment_date), reason)
+                    st.success(f"✅ Appointment request sent to {DOCTORS[selected_doctor]['name']}!")
+        
+        st.subheader("📋 All Appointments")
+        if st.session_state.appointments:
+            df = pd.DataFrame(st.session_state.appointments)
+            patient_names = {p['patient_id']: p['name'] for p in st.session_state.patients}
+            df['patient_name'] = df['patient_id'].map(patient_names)
+            st.dataframe(df[['id', 'date_time', 'patient_name', 'doctor_name', 'reason', 'status']], use_container_width=True)
+            
+            # Delete appointment option
+            appointment_ids = [a.get('id') for a in st.session_state.appointments]
+            if appointment_ids:
+                del_id = st.selectbox("Select Appointment ID to Delete", appointment_ids)
+                if st.button("🗑️ Delete Appointment"):
+                    delete_appointment(del_id)
+                    st.success("Appointment deleted!")
+                    st.rerun()
     
     elif menu == "⏰ Medicine Reminders":
         show_reminder_management()
     
-    elif menu == "💾 Backup/Restore":
-        st.header("💾 Backup & Restore")
-        col1, col2 = st.columns(2)
+    elif menu == "🤖 AI Assistant":
+        chatbot_ui()
+    
+    else:
+        # Other menus remain same as before
+        if menu == "🩺 Record Vitals":
+            st.header("🩺 Record Patient Vitals")
+            if st.session_state.patients:
+                patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+                selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+                with st.form("vitals_form"):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        sys = st.number_input("Systolic BP", 50, 250, 120)
+                        dia = st.number_input("Diastolic BP", 30, 150, 80)
+                    with col2:
+                        hr = st.number_input("Heart Rate", 30, 200, 75)
+                        bs = st.number_input("Blood Sugar", 0, 600, 100)
+                    with col3:
+                        wt = st.number_input("Weight (kg)", 0, 300, 70)
+                    notes = st.text_area("Notes")
+                    if st.form_submit_button("Save"):
+                        add_vitals(selected, sys, dia, hr, bs, wt, notes)
+                        st.success("✅ Vitals saved!")
+        
+        elif menu == "💊 Medications":
+            st.header("💊 Prescribe Medication")
+            if st.session_state.patients:
+                patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+                selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+                with st.form("med_form"):
+                    med = st.text_input("Medication Name")
+                    dose = st.text_input("Dosage")
+                    freq = st.selectbox("Frequency", ["Once daily", "Twice daily", "Three times daily"])
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        start = st.date_input("Start Date")
+                    with col2:
+                        end = st.date_input("End Date")
+                    if st.form_submit_button("Prescribe") and med:
+                        add_medication(selected, med, dose, freq, str(start), str(end))
+                        st.success(f"✅ {med} prescribed!")
+        
+        elif menu == "📈 Analytics":
+            st.header("📊 Health Analytics")
+            if st.session_state.vitals:
+                patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+                selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+                df = pd.DataFrame(st.session_state.vitals)
+                df['date'] = pd.to_datetime(df['date'])
+                df_patient = df[df['patient_id'] == selected].sort_values('date')
+                if not df_patient.empty:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_systolic'], name='Systolic'))
+                    fig.add_trace(go.Scatter(x=df_patient['date'], y=df_patient['bp_diastolic'], name='Diastolic'))
+                    fig.update_layout(title=f"BP Trend - {patients[selected]}")
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        elif menu == "📄 Reports":
+            st.header("📄 Generate Report")
+            if st.session_state.patients:
+                patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+                selected = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+                if st.button("Generate Report"):
+                    patient = get_patient_by_id(selected)
+                    vitals = [v for v in st.session_state.vitals if v['patient_id'] == selected]
+                    meds = [m for m in st.session_state.medications if m['patient_id'] == selected]
+                    report = f"""ICT HEALTH REPORT
+=================
+Patient: {patient['name']} (ID: {selected})
+Age: {patient['age']} | Gender: {patient['gender']}
+Contact: {patient.get('contact', 'N/A')}
+
+VITALS HISTORY:
+"""
+                    for v in vitals[-10:]:
+                        report += f"\n{v['date']}: BP {v['bp_systolic']}/{v['bp_diastolic']}, HR {v['heart_rate']}, BS {v['blood_sugar']}"
+                    report += "\n\nMEDICATIONS:\n"
+                    for m in meds:
+                        report += f"\n{m['med_name']}: {m['dosage']} ({m['frequency']})"
+                    st.text_area("Report", report, height=400)
+                    b64 = base64.b64encode(report.encode()).decode()
+                    st.markdown(f'<a href="data:text/plain;base64,{b64}" download="report_{selected}.txt">📥 Download Report</a>', unsafe_allow_html=True)
+        
+        elif menu == "💾 Backup/Restore":
+            st.header("💾 Backup & Restore")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Create Backup"):
+                    import zipfile, io
+                    buf = io.BytesIO()
+                    with zipfile.ZipFile(buf, 'w') as zf:
+                        for f in os.listdir(DATA_FOLDER):
+                            zf.write(os.path.join(DATA_FOLDER, f), f)
+                    b64 = base64.b64encode(buf.getvalue()).decode()
+                    st.markdown(f'<a href="data:application/zip;base64,{b64}" download="backup.zip">📥 Download Backup</a>', unsafe_allow_html=True)
+            with col2:
+                uploaded = st.file_uploader("Restore", type=['zip'])
+                if uploaded:
+                    import zipfile, io
+                    with zipfile.ZipFile(io.BytesIO(uploaded.read()), 'r') as zf:
+                        zf.extractall(DATA_FOLDER)
+                    st.rerun()
+        
+        elif menu == "ℹ️ About":
+            st.header("🌐 About ICT Health")
+            st.markdown("""
+            **ICT in Health - Hospital Management System**
+            
+            Features:
+            - Secure Admin, Doctor & Patient Portals
+            - Patient Registration with Edit/Delete
+            - Doctor Appointment Request/Accept Workflow
+            - Vitals Tracking (BP, Sugar, Heart Rate)
+            - Medication Prescription & Tracking
+            - Medicine Reminders with Alarm
+            - Health Analytics Dashboard
+            - PDF Reports Generation
+            - AI Health Assistant Chatbot
+            
+            **Access Credentials:**
+            - **Admin:** Username: `admin` | Password: `12345`
+            - **Doctors:** `doctor`, `doctor2`, `doctor3` | Password: `doctor123`
+            - **Patient:** Use registered Patient ID + Name
+            """)
+
+# ==================== DOCTOR PORTAL ====================
+
+def show_doctor_portal():
+    render_sidebar()
+    
+    doctor_username = st.session_state.current_user
+    doctor_info = DOCTORS.get(doctor_username, {})
+    doctor_name = doctor_info.get("name", doctor_username)
+    
+    st.markdown(f'<div class="main-header"><h2>👨‍⚕️ Welcome, {doctor_name}!</h2><p>{doctor_info.get("specialty", "Doctor")} Portal</p></div>', unsafe_allow_html=True)
+    
+    menu = st.session_state.selected_menu
+    
+    if menu == "📊 Doctor Dashboard":
+        st.header("📊 Your Dashboard")
+        
+        col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("Create Backup"):
-                import zipfile, io
-                buf = io.BytesIO()
-                with zipfile.ZipFile(buf, 'w') as zf:
-                    for f in os.listdir(DATA_FOLDER):
-                        zf.write(os.path.join(DATA_FOLDER, f), f)
-                b64 = base64.b64encode(buf.getvalue()).decode()
-                st.markdown(f'<a href="data:application/zip;base64,{b64}" download="backup.zip">📥 Download Backup</a>', unsafe_allow_html=True)
+            pending = len([a for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'pending'])
+            st.markdown(f'<div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending Requests</div></div>', unsafe_allow_html=True)
         with col2:
-            uploaded = st.file_uploader("Restore", type=['zip'])
-            if uploaded:
-                import zipfile, io
-                with zipfile.ZipFile(io.BytesIO(uploaded.read()), 'r') as zf:
-                    zf.extractall(DATA_FOLDER)
-                st.rerun()
+            accepted = len([a for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted'])
+            st.markdown(f'<div class="metric-card"><div class="metric-value">{accepted}</div><div class="metric-label">Accepted Appointments</div></div>', unsafe_allow_html=True)
+        with col3:
+            patients_count = len(set([a['patient_id'] for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted']))
+            st.markdown(f'<div class="metric-card"><div class="metric-value">{patients_count}</div><div class="metric-label">Your Patients</div></div>', unsafe_allow_html=True)
+        
+        # Today's appointments
+        today = date.today().strftime("%Y-%m-%d")
+        today_appointments = [a for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted' and today in a.get('date_time', '')]
+        if today_appointments:
+            st.subheader("📋 Today's Appointments")
+            for apt in today_appointments:
+                patient = get_patient_by_id(apt['patient_id'])
+                st.markdown(f"""
+                <div class="appointment-accepted" style="padding: 15px; border-radius: 10px; margin-bottom: 10px;">
+                    <strong>🕐 Time:</strong> {apt['date_time']}<br>
+                    <strong>👤 Patient:</strong> {patient['name'] if patient else apt['patient_id']}<br>
+                    <strong>📝 Reason:</strong> {apt['reason']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No appointments scheduled for today.")
+    
+    elif menu == "📅 Appointment Requests":
+        st.header("📅 Pending Appointment Requests")
+        
+        pending_appointments = [a for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'pending']
+        
+        if pending_appointments:
+            for apt in pending_appointments:
+                patient = get_patient_by_id(apt['patient_id'])
+                with st.container():
+                    st.markdown(f"""
+                    <div class="appointment-pending" style="padding: 15px; border-radius: 10px; margin-bottom: 10px;">
+                        <strong>📅 Date:</strong> {apt['date_time']}<br>
+                        <strong>👤 Patient:</strong> {patient['name'] if patient else apt['patient_id']}<br>
+                        <strong>📝 Reason:</strong> {apt['reason']}<br>
+                        <strong>📅 Requested:</strong> {apt.get('created_at', 'N/A')}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button(f"✅ Accept", key=f"accept_{apt['id']}"):
+                            update_appointment_status(apt['id'], 'accepted')
+                            st.success(f"Appointment accepted for {apt['date_time']}")
+                            st.rerun()
+                    with col2:
+                        if st.button(f"❌ Decline", key=f"decline_{apt['id']}"):
+                            update_appointment_status(apt['id'], 'declined')
+                            st.warning("Appointment declined")
+                            st.rerun()
+                    st.markdown("---")
+        else:
+            st.info("No pending appointment requests.")
+    
+    elif menu == "✅ My Appointments":
+        st.header("✅ Your Appointments")
+        
+        accepted_appointments = [a for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted']
+        
+        if accepted_appointments:
+            for apt in accepted_appointments:
+                patient = get_patient_by_id(apt['patient_id'])
+                st.markdown(f"""
+                <div class="appointment-accepted" style="padding: 15px; border-radius: 10px; margin-bottom: 10px;">
+                    <strong>📅 Date:</strong> {apt['date_time']}<br>
+                    <strong>👤 Patient:</strong> {patient['name'] if patient else apt['patient_id']}<br>
+                    <strong>📝 Reason:</strong> {apt['reason']}<br>
+                    <strong>✅ Status:</strong> Accepted on {apt.get('responded_at', 'N/A')}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No accepted appointments.")
+    
+    elif menu == "👥 My Patients":
+        st.header("👥 Your Patients")
+        
+        my_patient_ids = set([a['patient_id'] for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted'])
+        
+        if my_patient_ids:
+            for pid in my_patient_ids:
+                patient = get_patient_by_id(pid)
+                if patient:
+                    with st.expander(f"👤 {patient['name']} (ID: {pid})"):
+                        st.write(f"**Age:** {patient['age']}")
+                        st.write(f"**Gender:** {patient['gender']}")
+                        st.write(f"**Contact:** {patient.get('contact', 'N/A')}")
+                        st.write(f"**Address:** {patient.get('address', 'N/A')}")
+                        
+                        # Show patient vitals
+                        patient_vitals = [v for v in st.session_state.vitals if v['patient_id'] == pid]
+                        if patient_vitals:
+                            st.write("**Recent Vitals:**")
+                            df = pd.DataFrame(patient_vitals[-3:])
+                            st.dataframe(df[['date', 'bp_systolic', 'bp_diastolic', 'heart_rate']], use_container_width=True)
+        else:
+            st.info("No patients assigned yet.")
     
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
     
     elif menu == "ℹ️ About":
-        st.header("🌐 About ICT Health")
+        st.header("ℹ️ About Doctor Portal")
         st.markdown("""
-        **ICT in Health - Hospital Management System**
+        **Doctor Portal Features:**
         
-        Features:
-        - Secure Admin & Patient Portals
-        - Patient Registration & Management
-        - Vitals Tracking (BP, Sugar, Heart Rate)
-        - Medication Prescription & Tracking
-        - ⏰ **Medicine Reminders with Alarm**
-        - Appointment Scheduling
-        - Health Analytics Dashboard
-        - PDF Reports Generation
-        - AI Health Assistant Chatbot
+        - ✅ View and manage appointment requests
+        - ✅ Accept or decline patient appointments
+        - ✅ View your schedule and patient list
+        - ✅ Access patient health records
+        - ✅ AI Health Assistant for clinical support
         
-        **Access:**
-        - Admin: `admin` / `12345`
-        - Patient: Use registered Patient ID + Name
+        **Your Info:**
+        - You can set your availability status
+        - Appear in admin's doctor list
+        - Patients can request appointments with you
         """)
 
 # ==================== PATIENT PORTAL ====================
 
 def show_patient_portal():
     render_sidebar()
-    check_and_show_reminders()
     
     patient_id = st.session_state.current_patient_id
     patient_name = st.session_state.current_patient_name
@@ -896,42 +1169,58 @@ def show_patient_portal():
         with col3:
             st.markdown(f'<div class="metric-card"><div class="metric-value">{len(patient_appointments)}</div><div class="metric-label">Appointments</div></div>', unsafe_allow_html=True)
         
-        # Show upcoming reminders on dashboard
-        upcoming_reminders = [r for r in st.session_state.reminders if r['patient_id'] == patient_id and r['active']]
-        if upcoming_reminders:
-            st.subheader("🔔 Your Active Reminders")
-            for r in upcoming_reminders[:3]:
-                st.markdown(f'<div class="reminder-card">💊 <strong>{r["medicine_name"]}</strong> - {r["dosage"]} at ⏰ {r["reminder_time"]}</div>', unsafe_allow_html=True)
+        # Show appointment status
+        pending_appointments = [a for a in patient_appointments if a['status'] == 'pending']
+        accepted_appointments = [a for a in patient_appointments if a['status'] == 'accepted']
+        
+        if pending_appointments:
+            st.warning(f"📅 You have {len(pending_appointments)} pending appointment requests")
+        if accepted_appointments:
+            st.success(f"✅ You have {len(accepted_appointments)} accepted appointments")
         
         if patient_vitals:
             st.subheader("Recent Vitals")
             df = pd.DataFrame(patient_vitals[-5:])
             st.dataframe(df[['date', 'bp_systolic', 'bp_diastolic', 'heart_rate', 'blood_sugar']], use_container_width=True)
     
-    elif menu == "🩺 My Vitals":
-        st.header("Your Vitals History")
-        if patient_vitals:
+    elif menu == "📅 My Appointments":
+        st.header("📅 Your Appointments")
+        
+        if patient_appointments:
+            for apt in patient_appointments:
+                status_class = f"status-{apt['status']}"
+                status_text = apt['status'].upper()
+                st.markdown(f"""
+                <div style="padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #ddd;">
+                    <strong>📅 Date:</strong> {apt['date_time']}<br>
+                    <strong>👨‍⚕️ Doctor:</strong> {apt['doctor_name']}<br>
+                    <strong>📝 Reason:</strong> {apt['reason']}<br>
+                    <strong>📌 Status:</strong> <span class="status-badge {status_class}">{status_text}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No appointments scheduled.")
+    
+    elif menu == "⏰ My Reminders":
+        show_reminder_management()
+    
+    elif menu == "🤖 AI Assistant":
+        chatbot_ui()
+    
+    else:
+        # Other menus remain same
+        if menu == "🩺 My Vitals" and patient_vitals:
             df = pd.DataFrame(patient_vitals)
             st.dataframe(df, use_container_width=True)
             csv = df.to_csv(index=False)
             b64 = base64.b64encode(csv.encode()).decode()
             st.markdown(f'<a href="data:file/csv;base64,{b64}" download="my_vitals.csv">📥 Export CSV</a>', unsafe_allow_html=True)
-    
-    elif menu == "💊 My Medications":
-        st.header("Your Medications")
-        if patient_meds:
+        
+        elif menu == "💊 My Medications" and patient_meds:
             df = pd.DataFrame(patient_meds)
             st.dataframe(df[['med_name', 'dosage', 'frequency', 'start_date', 'end_date', 'status']], use_container_width=True)
-    
-    elif menu == "📅 My Appointments":
-        st.header("Your Appointments")
-        if patient_appointments:
-            df = pd.DataFrame(patient_appointments)
-            st.dataframe(df[['date_time', 'doctor', 'reason', 'status']], use_container_width=True)
-    
-    elif menu == "📈 My Analytics":
-        st.header("Your Health Trends")
-        if len(patient_vitals) > 1:
+        
+        elif menu == "📈 My Analytics" and len(patient_vitals) > 1:
             df = pd.DataFrame(patient_vitals)
             df['date'] = pd.to_datetime(df['date'])
             df = df.sort_values('date')
@@ -940,17 +1229,14 @@ def show_patient_portal():
             fig.add_trace(go.Scatter(x=df['date'], y=df['bp_diastolic'], name='Diastolic'))
             fig.update_layout(title="Your Blood Pressure Trend")
             st.plotly_chart(fig, use_container_width=True)
-    
-    elif menu == "📄 My Reports":
-        st.header("Your Health Report")
-        if st.button("Generate Report"):
-            report = f"""
-            PATIENT HEALTH REPORT
-            =====================
-            Patient: {patient_name} (ID: {patient_id})
-            
-            VITALS HISTORY:
-            """
+        
+        elif menu == "📄 My Reports" and st.button("Generate Report"):
+            report = f"""PATIENT HEALTH REPORT
+=====================
+Patient: {patient_name} (ID: {patient_id})
+
+VITALS HISTORY:
+"""
             for v in patient_vitals[-10:]:
                 report += f"\n{v['date']}: BP {v['bp_systolic']}/{v['bp_diastolic']}, HR {v['heart_rate']}"
             report += "\n\nMEDICATIONS:\n"
@@ -959,16 +1245,10 @@ def show_patient_portal():
             st.text_area("Report", report, height=300)
             b64 = base64.b64encode(report.encode()).decode()
             st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_report.txt">📥 Download Report</a>', unsafe_allow_html=True)
-    
-    elif menu == "⏰ My Reminders":
-        show_reminder_management()
-    
-    elif menu == "🤖 AI Assistant":
-        chatbot_ui()
-    
-    elif menu == "ℹ️ About":
-        st.header("About Your Portal")
-        st.markdown("View your medical records, track vitals, and manage appointments.")
+        
+        elif menu == "ℹ️ About":
+            st.header("About Your Portal")
+            st.markdown("View your medical records, track vitals, and manage appointments.")
 
 # ==================== MAIN ====================
 
@@ -978,6 +1258,8 @@ def main():
     else:
         if st.session_state.user_type == "admin":
             show_admin_dashboard()
+        elif st.session_state.user_type == "doctor":
+            show_doctor_portal()
         else:
             show_patient_portal()
 
