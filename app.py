@@ -218,11 +218,26 @@ def hash_password(password):
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD_HASH = hash_password("12345")
 
-# Doctor credentials
+# Doctor credentials - Updated with individual passwords
 DOCTORS = {
-    "doctor": {"name": "Dr. Sarah Ahmed", "password_hash": hash_password("doctor123"), "specialty": "Cardiologist", "available": True},
-    "doctor2": {"name": "Dr. Ali Raza", "password_hash": hash_password("doctor123"), "specialty": "General Physician", "available": True},
-    "doctor3": {"name": "Dr. Fatima Khan", "password_hash": hash_password("doctor123"), "specialty": "Pediatrician", "available": True}
+    "cardiologist": {
+        "name": "Dr. Sarah Ahmed", 
+        "password_hash": hash_password("cardiologist"), 
+        "specialty": "Cardiologist", 
+        "available": True
+    },
+    "general physician": {
+        "name": "Dr. Ali Raza", 
+        "password_hash": hash_password("general physician"), 
+        "specialty": "General Physician", 
+        "available": True
+    },
+    "neurologist": {
+        "name": "Dr. Fatima Khan", 
+        "password_hash": hash_password("neurologist"), 
+        "specialty": "Neurologist", 
+        "available": True
+    }
 }
 
 def init_auth():
@@ -249,9 +264,12 @@ def login_admin(username, password):
     return username == ADMIN_USERNAME and hash_password(password) == ADMIN_PASSWORD_HASH
 
 def login_doctor(username, password):
-    if username in DOCTORS and DOCTORS[username]["password_hash"] == hash_password(password):
-        return True, DOCTORS[username]["name"]
-    return False, None
+    # Convert username to lowercase for case-insensitive matching
+    username_lower = username.lower()
+    for doc_key in DOCTORS.keys():
+        if doc_key.lower() == username_lower and DOCTORS[doc_key]["password_hash"] == hash_password(password):
+            return True, DOCTORS[doc_key]["name"], doc_key
+    return False, None, None
 
 def verify_patient(patient_id, patient_name):
     patients = st.session_state.patients
@@ -533,15 +551,15 @@ def show_login_page():
                     st.error("❌ Invalid admin credentials!")
         
         with tab2:
-            st.info("Available Doctors: doctor, doctor2, doctor3 (Password: doctor123)")
-            doctor_username = st.text_input("Doctor Username", key="doctor_user", placeholder="doctor")
+            st.info("👨‍⚕️ Doctor Login\n\n• Cardiologist → Username: `cardiologist` | Password: `cardiologist`\n• General Physician → Username: `general physician` | Password: `general physician`\n• Neurologist → Username: `neurologist` | Password: `neurologist`")
+            doctor_username = st.text_input("Doctor Username", key="doctor_user", placeholder="cardiologist / general physician / neurologist")
             doctor_password = st.text_input("Password", type="password", key="doctor_pass", placeholder="•••••")
             if st.button("🔐 Login as Doctor", key="doctor_login"):
-                valid, name = login_doctor(doctor_username, doctor_password)
+                valid, name, doc_key = login_doctor(doctor_username, doctor_password)
                 if valid:
                     st.session_state.logged_in = True
                     st.session_state.user_type = "doctor"
-                    st.session_state.current_user = doctor_username
+                    st.session_state.current_user = doc_key
                     st.session_state.current_user_name = name
                     st.rerun()
                 else:
@@ -1003,7 +1021,10 @@ VITALS HISTORY:
             
             **Access Credentials:**
             - **Admin:** Username: `admin` | Password: `12345`
-            - **Doctors:** `doctor`, `doctor2`, `doctor3` | Password: `doctor123`
+            - **Doctors:** 
+              - Cardiologist: `cardiologist` / `cardiologist`
+              - General Physician: `general physician` / `general physician`
+              - Neurologist: `neurologist` / `neurologist`
             - **Patient:** Use registered Patient ID + Name
             """)
 
