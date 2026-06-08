@@ -329,7 +329,7 @@ def add_registration_request(name, age, gender, contact, address, reason):
     save_requests()
     return True
 
-def add_manual_patient(name, age, gender, contact, address):
+def add_manual_patient(name, age, gender, contact, address, reason, refer_to_doctor):
     """Admin manually adds a patient directly without approval"""
     patient_id = generate_unique_id()
     add_patient(patient_id, name, age, gender, contact, address)
@@ -342,7 +342,7 @@ def add_manual_patient(name, age, gender, contact, address):
         'gender': gender,
         'contact': contact,
         'address': address,
-        'reason': 'Walk-in patient (manually added by admin)',
+        'reason': reason,
         'status': 'approved',
         'submitted_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'assigned_id': patient_id,
@@ -350,6 +350,14 @@ def add_manual_patient(name, age, gender, contact, address):
     }
     st.session_state.registration_requests.append(request)
     save_requests()
+    
+    # If refer_to_doctor is selected, create an appointment request
+    if refer_to_doctor and refer_to_doctor != "None":
+        doctor_info = DOCTORS.get(refer_to_doctor, {})
+        if doctor_info:
+            appointment_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+            add_appointment(patient_id, refer_to_doctor, doctor_info["name"], appointment_date, reason)
+    
     return patient_id
 
 def approve_request(request_id, patient_id):
@@ -873,7 +881,7 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
-            pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending'])
+            pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending' and r.get('source') != 'manual'])
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-number">{len(st.session_state.patients)}</div>
@@ -892,7 +900,7 @@ def render_sidebar():
             st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 MAIN MENU</div>", unsafe_allow_html=True)
             
             menu_items = [
-                "📊 Dashboard", "📝 Pending Approvals", "👨‍👩‍👧 Patient Management",
+                "📊 Dashboard", "👨‍👩‍👧 Patient Management",
                 "🩺 Record Vitals", "💊 Medications", "📅 Appointments",
                 "📈 Analytics", "📄 Reports", "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
             ]
@@ -970,14 +978,16 @@ def render_sidebar():
         </div>
         """, unsafe_allow_html=True)
 
-# ==================== PENDING APPROVALS (ADMIN) ====================
+# ==================== PATIENT MANAGEMENT (ADMIN) ====================
 
-def show_pending_approvals():
-    st.header("📝 Patient Registration Management")
+def show_patient_management():
+    st.header("📝 Patient Management")
     
-    tab1, tab2 = st.tabs(["📋 Pending Online Registrations", "➕ Manually Add Patient"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Pending Approvals", "➕ Register Patient", "✏️ Edit Patient", "🗑️ Delete Patient"])
     
+    # Tab 1: Pending Approvals
     with tab1:
+        st.subheader("📋 Pending Online Registrations")
         pending_requests = [r for r in st.session_state.registration_requests if r['status'] == 'pending' and r.get('source') != 'manual']
         
         if not pending_requests:
@@ -1017,9 +1027,10 @@ def show_pending_approvals():
                     
                     st.markdown("---")
     
+    # Tab 2: Register Patient (Manual)
     with tab2:
-        st.subheader("➕ Manually Add Patient (Walk-in)")
-        st.info("Use this option when a patient visits the hospital directly. They will get a Patient ID immediately.")
+        st.subheader("➕ Register New Patient & Refer to Doctor")
+        st.info("Register a walk-in patient and refer them to an available doctor.")
         
         with st.form("manual_patient_form"):
             col1, col2 = st.columns(2)
@@ -1032,17 +1043,68 @@ def show_pending_approvals():
                 address = st.text_area("Address*")
             reason = st.text_area("Reason for Visit / Initial Complaint", height=80)
             
-            submitted = st.form_submit_button("Register Patient")
+            # Doctor referral section
+            st.markdown("---")
+            st.markdown("### 👨‍⚕️ Refer to Doctor")
+            doctor_options = {username: f"{info['name']} ({info['specialty']})" for username, info in DOCTORS.items()}
+            doctor_options["None"] = "No referral needed"
+            selected_doctor = st.selectbox("Select Doctor to Refer", list(doctor_options.keys()), format_func=lambda x: doctor_options[x])
+            
+            submitted = st.form_submit_button("Register & Refer Patient")
             
             if submitted:
                 if name and age and contact and address:
-                    patient_id = add_manual_patient(name, age, gender, contact, address)
+                    refer_doctor = None if selected_doctor == "None" else selected_doctor
+                    patient_id = add_manual_patient(name, age, gender, contact, address, reason, refer_doctor)
                     st.success(f"✅ Patient {name} registered successfully!")
                     st.info(f"📌 Patient ID: {patient_id}")
                     st.info(f"🔐 Patient can login using ID: {patient_id} and Name: {name}")
+                    
+                    if refer_doctor:
+                        st.success(f"📅 Appointment request sent to {DOCTORS[refer_doctor]['name']} for tomorrow")
                     st.balloons()
                 else:
                     st.warning("Please fill all required fields (*)")
+    
+    # Tab 3: Edit Patient
+    with tab3:
+        st.subheader("✏️ Edit Patient Information")
+        patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+        if patients:
+            selected_patient = st.selectbox("Select Patient to Edit", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+            patient_data = get_patient_by_id(selected_patient)
+            if patient_data:
+                with st.form("edit_form"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        name = st.text_input("Full Name", value=patient_data['name'])
+                        age = st.number_input("Age", min_value=0, max_value=150, value=patient_data['age'])
+                    with col2:
+                        gender = st.selectbox("Gender", ["Male", "Female", "Other"], index=["Male", "Female", "Other"].index(patient_data['gender']))
+                        contact = st.text_input("Contact", value=patient_data.get('contact', ''))
+                        address = st.text_area("Address", value=patient_data.get('address', ''))
+                    if st.form_submit_button("Update Patient"):
+                        update_patient(selected_patient, name, age, gender, contact, address)
+                        st.success("✅ Patient updated successfully!")
+                        st.rerun()
+        else:
+            st.info("No patients registered")
+    
+    # Tab 4: Delete Patient
+    with tab4:
+        st.subheader("🗑️ Delete Patient")
+        patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
+        if patients:
+            selected_patient = st.selectbox("Select Patient to Delete", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
+            if st.button("🗑️ Permanently Delete Patient", use_container_width=True):
+                if st.checkbox("I understand this action cannot be undone"):
+                    delete_patient(selected_patient)
+                    st.success(f"✅ Patient {selected_patient} deleted successfully!")
+                    st.rerun()
+                else:
+                    st.warning("Please confirm deletion")
+        else:
+            st.info("No patients registered")
 
 # ==================== DOCTOR MY PATIENTS DETAILS ====================
 
@@ -1192,61 +1254,15 @@ def show_admin_dashboard():
         
         pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending' and r.get('source') != 'manual'])
         if pending_requests > 0:
-            st.warning(f"📝 You have {pending_requests} pending patient registration approvals. Go to 'Pending Approvals' to review.")
+            st.warning(f"📝 You have {pending_requests} pending patient registration approvals. Go to 'Patient Management' to review.")
         
         if st.session_state.patients:
             st.subheader("📋 All Registered Patients")
             df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
             st.dataframe(df, use_container_width=True)
     
-    elif menu == "📝 Pending Approvals":
-        show_pending_approvals()
-    
     elif menu == "👨‍👩‍👧 Patient Management":
-        st.header("📝 Patient Management")
-        
-        tab1, tab2, tab3 = st.tabs(["✏️ Edit Patient", "🗑️ Delete Patient", "📋 All Patients"])
-        
-        with tab1:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
-            if patients:
-                selected_patient = st.selectbox("Select Patient to Edit", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-                patient_data = get_patient_by_id(selected_patient)
-                if patient_data:
-                    with st.form("edit_form"):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            name = st.text_input("Full Name", value=patient_data['name'])
-                            age = st.number_input("Age", min_value=0, max_value=150, value=patient_data['age'])
-                        with col2:
-                            gender = st.selectbox("Gender", ["Male", "Female", "Other"], index=["Male", "Female", "Other"].index(patient_data['gender']))
-                            contact = st.text_input("Contact", value=patient_data.get('contact', ''))
-                            address = st.text_area("Address", value=patient_data.get('address', ''))
-                        if st.form_submit_button("Update Patient"):
-                            update_patient(selected_patient, name, age, gender, contact, address)
-                            st.success("✅ Patient updated successfully!")
-                            st.rerun()
-            else:
-                st.info("No patients registered")
-        
-        with tab2:
-            patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
-            if patients:
-                selected_patient = st.selectbox("Select Patient to Delete", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-                if st.button("🗑️ Permanently Delete Patient", use_container_width=True):
-                    if st.checkbox("I understand this action cannot be undone"):
-                        delete_patient(selected_patient)
-                        st.success(f"✅ Patient {selected_patient} deleted successfully!")
-                        st.rerun()
-                    else:
-                        st.warning("Please confirm deletion")
-            else:
-                st.info("No patients registered")
-        
-        with tab3:
-            if st.session_state.patients:
-                df = pd.DataFrame([p for p in st.session_state.patients if p.get('active', True)])
-                st.dataframe(df, use_container_width=True)
+        show_patient_management()
     
     elif menu == "📅 Appointments":
         st.header("📅 Manage Appointments")
@@ -1313,7 +1329,7 @@ def show_admin_dashboard():
         
         Features:
         - Patient Self Registration with Admin Approval
-        - Manual Patient Entry by Admin for Walk-ins
+        - Manual Patient Entry by Admin for Walk-ins with Doctor Referral
         - Admin generates Unique Patient ID
         - Secure Admin, Doctor & Patient Portals
         - Vitals Tracking (BP, Sugar, Heart Rate)
@@ -1510,29 +1526,24 @@ def show_doctor_portal():
         
         my_patient_ids = set([a['patient_id'] for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted'])
         
-        if my_patient_ids:
-            # Also include patients who have been prescribed medications or notes by this doctor
-            med_patients = set([m['patient_id'] for m in st.session_state.doctor_medications if m['doctor_username'] == doctor_username])
-            note_patients = set([n['patient_id'] for n in st.session_state.patient_notes if n['doctor_username'] == doctor_username])
-            all_patient_ids = my_patient_ids.union(med_patients).union(note_patients)
-            
-            if all_patient_ids:
-                for pid in all_patient_ids:
-                    patient = get_patient_by_id(pid)
-                    if patient:
-                        with st.expander(f"👤 {patient['name']} (ID: {pid})", expanded=False):
-                            if st.button(f"📋 View & Manage {patient['name']}", key=f"manage_{pid}"):
-                                st.session_state.selected_patient_for_doctor = pid
-                                st.session_state.show_patient_detail = True
-                                st.rerun()
-                            
-                            # Quick preview
-                            st.write(f"**Age:** {patient['age']} | **Gender:** {patient['gender']}")
-                            st.write(f"**Contact:** {patient.get('contact', 'N/A')}")
-                else:
-                    st.info("No patients assigned yet.")
-            else:
-                st.info("No patients assigned yet.")
+        # Also include patients who have been prescribed medications or notes by this doctor
+        med_patients = set([m['patient_id'] for m in st.session_state.doctor_medications if m['doctor_username'] == doctor_username])
+        note_patients = set([n['patient_id'] for n in st.session_state.patient_notes if n['doctor_username'] == doctor_username])
+        all_patient_ids = my_patient_ids.union(med_patients).union(note_patients)
+        
+        if all_patient_ids:
+            for pid in all_patient_ids:
+                patient = get_patient_by_id(pid)
+                if patient:
+                    with st.expander(f"👤 {patient['name']} (ID: {pid})", expanded=False):
+                        if st.button(f"📋 View & Manage {patient['name']}", key=f"manage_{pid}"):
+                            st.session_state.selected_patient_for_doctor = pid
+                            st.session_state.show_patient_detail = True
+                            st.rerun()
+                        
+                        # Quick preview
+                        st.write(f"**Age:** {patient['age']} | **Gender:** {patient['gender']}")
+                        st.write(f"**Contact:** {patient.get('contact', 'N/A')}")
         else:
             st.info("No patients assigned yet.")
         
