@@ -1,6 +1,6 @@
 """
 ICT in Health - Hospital Management System
-With Patient Self-Registration + Admin Approval + Patient Status Check
+With Patient Self-Registration + Admin Manual Entry + Doctor Patient Management
 """
 
 import streamlit as st
@@ -155,29 +155,6 @@ st.markdown("""
         color: #666;
     }
 
-    .reminder-card {
-        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-        border-radius: 15px;
-        padding: 15px;
-        margin: 10px 0;
-        border-left: 5px solid #f59e0b;
-    }
-    
-    .appointment-pending {
-        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-        border-left: 5px solid #f59e0b;
-    }
-    
-    .appointment-accepted {
-        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-        border-left: 5px solid #10b981;
-    }
-    
-    .appointment-declined {
-        background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-        border-left: 5px solid #ef4444;
-    }
-
     [data-testid="stSidebar"] .stSelectbox > div > div {
         background: rgba(255,255,255,0.1) !important;
         color: white !important;
@@ -231,6 +208,24 @@ st.markdown("""
         margin: 15px 0;
         border-left: 5px solid #f59e0b;
     }
+    
+    .medical-note {
+        background: #f0fdf4;
+        border-left: 4px solid #22c55e;
+        padding: 12px;
+        border-radius: 8px;
+        margin: 10px 0;
+        font-size: 0.85rem;
+    }
+    
+    .follow-up {
+        background: #e0f2fe;
+        border-left: 4px solid #0284c7;
+        padding: 12px;
+        border-radius: 8px;
+        margin: 10px 0;
+        font-size: 0.85rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -278,10 +273,6 @@ def init_auth():
         st.session_state.current_patient_name = None
     if 'selected_menu' not in st.session_state:
         st.session_state.selected_menu = "📊 Dashboard"
-    if 'reminders' not in st.session_state:
-        st.session_state.reminders = []
-    if 'reminder_check_time' not in st.session_state:
-        st.session_state.reminder_check_time = None
 
 init_auth()
 
@@ -305,6 +296,9 @@ def verify_patient(patient_id, patient_name):
 # ==================== REGISTRATION REQUESTS FUNCTIONS ====================
 
 REQUESTS_FILE = os.path.join("hospital_data", "registration_requests.json")
+PATIENT_NOTES_FILE = os.path.join("hospital_data", "patient_notes.json")
+DOCTOR_MEDICATIONS_FILE = os.path.join("hospital_data", "doctor_medications.json")
+FOLLOWUP_FILE = os.path.join("hospital_data", "followups.json")
 
 def save_requests():
     with open(REQUESTS_FILE, 'w') as f:
@@ -328,11 +322,35 @@ def add_registration_request(name, age, gender, contact, address, reason):
         'reason': reason,
         'status': 'pending',
         'submitted_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'assigned_id': None
+        'assigned_id': None,
+        'source': 'online'
     }
     st.session_state.registration_requests.append(request)
     save_requests()
     return True
+
+def add_manual_patient(name, age, gender, contact, address):
+    """Admin manually adds a patient directly without approval"""
+    patient_id = generate_unique_id()
+    add_patient(patient_id, name, age, gender, contact, address)
+    
+    # Also create a registration request record
+    request = {
+        'id': len(st.session_state.registration_requests) + 1,
+        'name': name,
+        'age': age,
+        'gender': gender,
+        'contact': contact,
+        'address': address,
+        'reason': 'Walk-in patient (manually added by admin)',
+        'status': 'approved',
+        'submitted_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'assigned_id': patient_id,
+        'source': 'manual'
+    }
+    st.session_state.registration_requests.append(request)
+    save_requests()
+    return patient_id
 
 def approve_request(request_id, patient_id):
     for req in st.session_state.registration_requests:
@@ -352,43 +370,98 @@ def reject_request(request_id):
             break
     save_requests()
 
-# ==================== REMINDER FUNCTIONS ====================
+# ==================== DOCTOR NOTES FUNCTIONS ====================
 
-REMINDERS_FILE = os.path.join("hospital_data", "reminders.json")
+def save_patient_notes():
+    if 'patient_notes' not in st.session_state:
+        st.session_state.patient_notes = []
+    with open(PATIENT_NOTES_FILE, 'w') as f:
+        json.dump(st.session_state.patient_notes, f, indent=2)
 
-def save_reminders():
-    with open(REMINDERS_FILE, 'w') as f:
-        json.dump(st.session_state.reminders, f, indent=2)
+def load_patient_notes():
+    if os.path.exists(PATIENT_NOTES_FILE):
+        with open(PATIENT_NOTES_FILE, 'r') as f:
+            st.session_state.patient_notes = json.load(f)
+    else:
+        st.session_state.patient_notes = []
 
-def load_reminders():
-    if os.path.exists(REMINDERS_FILE):
-        with open(REMINDERS_FILE, 'r') as f:
-            st.session_state.reminders = json.load(f)
-
-def add_reminder(patient_id, medicine_name, reminder_time, dosage):
-    reminder = {
-        'id': len(st.session_state.reminders) + 1,
+def add_patient_note(patient_id, doctor_username, doctor_name, note):
+    new_note = {
+        'id': len(st.session_state.patient_notes) + 1,
         'patient_id': patient_id,
-        'medicine_name': medicine_name,
-        'reminder_time': reminder_time,
-        'dosage': dosage,
-        'active': True,
+        'doctor_username': doctor_username,
+        'doctor_name': doctor_name,
+        'note': note,
         'created_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
-    st.session_state.reminders.append(reminder)
-    save_reminders()
-    return True
+    st.session_state.patient_notes.append(new_note)
+    save_patient_notes()
 
-def delete_reminder(reminder_id):
-    st.session_state.reminders = [r for r in st.session_state.reminders if r['id'] != reminder_id]
-    save_reminders()
+def get_patient_notes(patient_id):
+    return [n for n in st.session_state.patient_notes if n['patient_id'] == patient_id]
 
-def toggle_reminder(reminder_id):
-    for r in st.session_state.reminders:
-        if r['id'] == reminder_id:
-            r['active'] = not r['active']
-            break
-    save_reminders()
+def save_doctor_medications():
+    if 'doctor_medications' not in st.session_state:
+        st.session_state.doctor_medications = []
+    with open(DOCTOR_MEDICATIONS_FILE, 'w') as f:
+        json.dump(st.session_state.doctor_medications, f, indent=2)
+
+def load_doctor_medications():
+    if os.path.exists(DOCTOR_MEDICATIONS_FILE):
+        with open(DOCTOR_MEDICATIONS_FILE, 'r') as f:
+            st.session_state.doctor_medications = json.load(f)
+    else:
+        st.session_state.doctor_medications = []
+
+def add_doctor_medication(patient_id, doctor_username, doctor_name, med_name, dosage, frequency, duration, instructions):
+    new_med = {
+        'id': len(st.session_state.doctor_medications) + 1,
+        'patient_id': patient_id,
+        'doctor_username': doctor_username,
+        'doctor_name': doctor_name,
+        'med_name': med_name,
+        'dosage': dosage,
+        'frequency': frequency,
+        'duration': duration,
+        'instructions': instructions,
+        'prescribed_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'status': 'active'
+    }
+    st.session_state.doctor_medications.append(new_med)
+    save_doctor_medications()
+
+def get_doctor_medications(patient_id):
+    return [m for m in st.session_state.doctor_medications if m['patient_id'] == patient_id]
+
+def save_followups():
+    if 'followups' not in st.session_state:
+        st.session_state.followups = []
+    with open(FOLLOWUP_FILE, 'w') as f:
+        json.dump(st.session_state.followups, f, indent=2)
+
+def load_followups():
+    if os.path.exists(FOLLOWUP_FILE):
+        with open(FOLLOWUP_FILE, 'r') as f:
+            st.session_state.followups = json.load(f)
+    else:
+        st.session_state.followups = []
+
+def add_followup(patient_id, doctor_username, doctor_name, advice, followup_date):
+    new_followup = {
+        'id': len(st.session_state.followups) + 1,
+        'patient_id': patient_id,
+        'doctor_username': doctor_username,
+        'doctor_name': doctor_name,
+        'advice': advice,
+        'followup_date': followup_date,
+        'created_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'status': 'scheduled'
+    }
+    st.session_state.followups.append(new_followup)
+    save_followups()
+
+def get_followups(patient_id):
+    return [f for f in st.session_state.followups if f['patient_id'] == patient_id]
 
 # ==================== FILE STORAGE FUNCTIONS ====================
 
@@ -463,16 +536,16 @@ def init_session_state():
         st.session_state.appointments = load_appointments()
 
 init_session_state()
-load_reminders()
 load_requests()
+load_patient_notes()
+load_doctor_medications()
+load_followups()
 
 # ==================== HELPER FUNCTIONS ====================
 
 def add_patient(patient_id, name, age, gender, contact, address):
-    # Check if patient ID already exists
     existing_ids = [p['patient_id'] for p in st.session_state.patients]
     if patient_id in existing_ids:
-        # Generate new unique ID
         patient_id = generate_unique_id()
     
     new_patient = {
@@ -490,7 +563,6 @@ def add_patient(patient_id, name, age, gender, contact, address):
     return patient_id
 
 def generate_unique_id():
-    """Generate a unique patient ID"""
     existing_ids = [p['patient_id'] for p in st.session_state.patients]
     prefix = "PAT"
     counter = 1
@@ -514,12 +586,16 @@ def delete_patient(patient_id):
     st.session_state.vitals = [v for v in st.session_state.vitals if v['patient_id'] != patient_id]
     st.session_state.medications = [m for m in st.session_state.medications if m['patient_id'] != patient_id]
     st.session_state.appointments = [a for a in st.session_state.appointments if a['patient_id'] != patient_id]
-    st.session_state.reminders = [r for r in st.session_state.reminders if r['patient_id'] != patient_id]
+    st.session_state.patient_notes = [n for n in st.session_state.patient_notes if n['patient_id'] != patient_id]
+    st.session_state.doctor_medications = [m for m in st.session_state.doctor_medications if m['patient_id'] != patient_id]
+    st.session_state.followups = [f for f in st.session_state.followups if f['patient_id'] != patient_id]
     save_patients(st.session_state.patients)
     save_vitals(st.session_state.vitals)
     save_medications(st.session_state.medications)
     save_appointments(st.session_state.appointments)
-    save_reminders()
+    save_patient_notes()
+    save_doctor_medications()
+    save_followups()
 
 def add_vitals(patient_id, bp_sys, bp_dia, heart_rate, blood_sugar, weight, notes=""):
     new_vital = {
@@ -716,7 +792,6 @@ def show_login_page():
             
             if st.button("🔍 Check Status", key="check_status", use_container_width=True):
                 if check_name and check_contact:
-                    # Find matching registration
                     matching_requests = [r for r in st.session_state.registration_requests 
                                         if r['name'].lower() == check_name.lower() and r['contact'] == check_contact]
                     
@@ -742,7 +817,6 @@ def show_login_page():
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Downloadable credentials
                             creds = f"Patient ID: {latest_request['assigned_id']}\nName: {latest_request['name']}\nContact: {latest_request['contact']}\n\nPlease keep this information safe."
                             b64 = base64.b64encode(creds.encode()).decode()
                             st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_credentials.txt">📥 Download My Credentials</a>', unsafe_allow_html=True)
@@ -776,7 +850,6 @@ def show_login_page():
             
             st.markdown("---")
             st.caption("💡 **Note:** After admin approves your registration, your Patient ID will appear here. Save it for future logins.")
-            st.caption("📱 **How to receive your ID:** Check this page after admin approval. Your Patient ID will be displayed here.")
         
         st.markdown("---")
         st.markdown("<center><small>© 2026 ICT Health | Secure Hospital Management System</small></center>", unsafe_allow_html=True)
@@ -821,8 +894,7 @@ def render_sidebar():
             menu_items = [
                 "📊 Dashboard", "📝 Pending Approvals", "👨‍👩‍👧 Patient Management",
                 "🩺 Record Vitals", "💊 Medications", "📅 Appointments",
-                "📈 Analytics", "📄 Reports", "⏰ Medicine Reminders",
-                "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
+                "📈 Analytics", "📄 Reports", "💾 Backup/Restore", "🤖 AI Assistant", "ℹ️ About"
             ]
             
         elif st.session_state.user_type == "doctor":
@@ -864,7 +936,6 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             
-            active_reminders = len([r for r in st.session_state.reminders if r['patient_id'] == st.session_state.current_patient_id and r['active']])
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-number">{len(patient_vitals)}</div>
@@ -874,10 +945,6 @@ def render_sidebar():
                 <div class="stat-number">{len(patient_meds)}</div>
                 <div class="stat-label">Your Medications</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-number">{active_reminders}</div>
-                <div class="stat-label">Active Reminders</div>
-            </div>
             """, unsafe_allow_html=True)
             
             st.markdown("<div style='margin: 20px 0 10px 15px; color: #ffd700; font-size: 0.8rem;'>📋 YOUR PORTAL</div>", unsafe_allow_html=True)
@@ -885,7 +952,7 @@ def render_sidebar():
             menu_items = [
                 "📊 My Dashboard", "🩺 My Vitals", "💊 My Medications",
                 "📅 My Appointments", "📈 My Analytics", "📄 My Reports",
-                "⏰ My Reminders", "🤖 AI Assistant", "ℹ️ About"
+                "🤖 AI Assistant", "ℹ️ About"
             ]
         
         for item in menu_items:
@@ -903,115 +970,203 @@ def render_sidebar():
         </div>
         """, unsafe_allow_html=True)
 
-# ==================== REMINDER UI COMPONENTS ====================
-
-def show_reminder_management():
-    st.header("⏰ Medicine Reminder System")
-    
-    if st.session_state.user_type == "admin":
-        patients = {p['patient_id']: p['name'] for p in st.session_state.patients if p.get('active', True)}
-        if patients:
-            selected_patient = st.selectbox("Select Patient", list(patients.keys()), format_func=lambda x: f"{x} - {patients[x]}")
-            show_patient = selected_patient
-        else:
-            st.warning("No patients registered yet.")
-            return
-    else:
-        show_patient = st.session_state.current_patient_id
-    
-    with st.expander("➕ Add New Medicine Reminder", expanded=True):
-        with st.form("add_reminder_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                medicine_name = st.text_input("Medicine Name", placeholder="e.g., Metformin, Lisinopril")
-                reminder_time = st.time_input("Reminder Time", value=dt_time(9, 0))
-            with col2:
-                dosage = st.text_input("Dosage", placeholder="e.g., 500mg, 1 tablet")
-            
-            submitted = st.form_submit_button("🔔 Set Reminder", use_container_width=True)
-            
-            if submitted and medicine_name:
-                add_reminder(show_patient, medicine_name, reminder_time.strftime("%H:%M"), dosage)
-                st.success(f"✅ Reminder set for {medicine_name} at {reminder_time.strftime('%H:%M')}")
-                st.rerun()
-            elif submitted:
-                st.warning("Please enter medicine name")
-    
-    st.subheader("📋 Your Reminders")
-    patient_reminders = [r for r in st.session_state.reminders if r['patient_id'] == show_patient]
-    
-    if patient_reminders:
-        for reminder in patient_reminders:
-            with st.container():
-                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
-                with col1:
-                    st.markdown(f"**💊 {reminder['medicine_name']}**")
-                with col2:
-                    st.markdown(f"⏰ {reminder['reminder_time']}")
-                with col3:
-                    st.markdown(f"📦 {reminder['dosage']}")
-                with col4:
-                    status = "✅ Active" if reminder['active'] else "⏸️ Paused"
-                    st.markdown(f"<span style='color: #10b981;'>{status}</span>", unsafe_allow_html=True)
-                
-                col1, col2, col3 = st.columns([1, 1, 4])
-                with col1:
-                    if st.button("⏯️ Toggle", key=f"toggle_{reminder['id']}"):
-                        toggle_reminder(reminder['id'])
-                        st.rerun()
-                with col2:
-                    if st.button("🗑️ Delete", key=f"del_{reminder['id']}"):
-                        delete_reminder(reminder['id'])
-                        st.rerun()
-                st.markdown("---")
-    else:
-        st.info("No reminders set. Add a reminder above!")
-
 # ==================== PENDING APPROVALS (ADMIN) ====================
 
 def show_pending_approvals():
-    st.header("📝 Pending Patient Registration Approvals")
+    st.header("📝 Patient Registration Management")
     
-    pending_requests = [r for r in st.session_state.registration_requests if r['status'] == 'pending']
+    tab1, tab2 = st.tabs(["📋 Pending Online Registrations", "➕ Manually Add Patient"])
     
-    if not pending_requests:
-        st.info("No pending registration requests.")
-        return
+    with tab1:
+        pending_requests = [r for r in st.session_state.registration_requests if r['status'] == 'pending' and r.get('source') != 'manual']
+        
+        if not pending_requests:
+            st.info("No pending registration requests.")
+        else:
+            for req in pending_requests:
+                with st.container():
+                    st.markdown(f"""
+                    <div class="pending-approval">
+                        <strong>📅 Submitted:</strong> {req['submitted_date']}<br>
+                        <strong>👤 Name:</strong> {req['name']}<br>
+                        <strong>🎂 Age:</strong> {req['age']} | <strong>⚧ Gender:</strong> {req['gender']}<br>
+                        <strong>📞 Contact:</strong> {req['contact']}<br>
+                        <strong>📍 Address:</strong> {req['address']}<br>
+                        <strong>📝 Reason for Registration:</strong> {req['reason'] if req['reason'] else 'Not specified'}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    
+                    with col1:
+                        suggested_id = generate_unique_id()
+                        patient_id = st.text_input(f"Patient ID for {req['name']}", value=suggested_id, key=f"id_{req['id']}")
+                    
+                    with col2:
+                        if st.button("✅ Approve", key=f"approve_{req['id']}"):
+                            approve_request(req['id'], patient_id)
+                            st.success(f"✅ Patient {req['name']} approved! Patient ID: {patient_id}")
+                            st.info(f"📌 Patient can now login using ID: {patient_id} and Name: {req['name']}")
+                            st.rerun()
+                    
+                    with col3:
+                        if st.button("❌ Reject", key=f"reject_{req['id']}"):
+                            reject_request(req['id'])
+                            st.warning(f"❌ Registration request from {req['name']} rejected")
+                            st.rerun()
+                    
+                    st.markdown("---")
     
-    for req in pending_requests:
-        with st.container():
+    with tab2:
+        st.subheader("➕ Manually Add Patient (Walk-in)")
+        st.info("Use this option when a patient visits the hospital directly. They will get a Patient ID immediately.")
+        
+        with st.form("manual_patient_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input("Full Name*")
+                age = st.number_input("Age*", min_value=0, max_value=150)
+                gender = st.selectbox("Gender*", ["Male", "Female", "Other"])
+            with col2:
+                contact = st.text_input("Contact Number*")
+                address = st.text_area("Address*")
+            reason = st.text_area("Reason for Visit / Initial Complaint", height=80)
+            
+            submitted = st.form_submit_button("Register Patient")
+            
+            if submitted:
+                if name and age and contact and address:
+                    patient_id = add_manual_patient(name, age, gender, contact, address)
+                    st.success(f"✅ Patient {name} registered successfully!")
+                    st.info(f"📌 Patient ID: {patient_id}")
+                    st.info(f"🔐 Patient can login using ID: {patient_id} and Name: {name}")
+                    st.balloons()
+                else:
+                    st.warning("Please fill all required fields (*)")
+
+# ==================== DOCTOR MY PATIENTS DETAILS ====================
+
+def show_doctor_patient_details(patient_id, patient_name, doctor_username, doctor_name):
+    """Show detailed view of a single patient for doctor with edit capabilities"""
+    
+    st.subheader(f"👤 Patient: {patient_name} (ID: {patient_id})")
+    
+    # Tabs for different sections
+    tabs = st.tabs(["📋 Patient Info", "🩺 Vitals History", "💊 Prescribe Medication", "📝 Medical Notes", "📅 Follow-up Advice", "💊 Prescribed Medications"])
+    
+    with tabs[0]:
+        patient = get_patient_by_id(patient_id)
+        if patient:
             st.markdown(f"""
-            <div class="pending-approval">
-                <strong>📅 Submitted:</strong> {req['submitted_date']}<br>
-                <strong>👤 Name:</strong> {req['name']}<br>
-                <strong>🎂 Age:</strong> {req['age']} | <strong>⚧ Gender:</strong> {req['gender']}<br>
-                <strong>📞 Contact:</strong> {req['contact']}<br>
-                <strong>📍 Address:</strong> {req['address']}<br>
-                <strong>📝 Reason for Registration:</strong> {req['reason'] if req['reason'] else 'Not specified'}
+            <div style="background: #f8fafc; padding: 15px; border-radius: 10px;">
+                <p><strong>📛 Name:</strong> {patient['name']}</p>
+                <p><strong>🎂 Age:</strong> {patient['age']}</p>
+                <p><strong>⚧ Gender:</strong> {patient['gender']}</p>
+                <p><strong>📞 Contact:</strong> {patient.get('contact', 'N/A')}</p>
+                <p><strong>📍 Address:</strong> {patient.get('address', 'N/A')}</p>
+                <p><strong>📅 Registered:</strong> {patient.get('registration_date', 'N/A')}</p>
             </div>
             """, unsafe_allow_html=True)
-            
-            col1, col2, col3 = st.columns([2, 1, 1])
-            
+    
+    with tabs[1]:
+        patient_vitals = [v for v in st.session_state.vitals if v['patient_id'] == patient_id]
+        if patient_vitals:
+            df = pd.DataFrame(patient_vitals)
+            st.dataframe(df[['date', 'bp_systolic', 'bp_diastolic', 'heart_rate', 'blood_sugar', 'weight', 'notes']], use_container_width=True)
+        else:
+            st.info("No vitals recorded for this patient yet.")
+    
+    with tabs[2]:
+        st.markdown("### 💊 Prescribe New Medication")
+        with st.form("doctor_prescribe_form"):
+            col1, col2 = st.columns(2)
             with col1:
-                # Suggest a patient ID
-                suggested_id = generate_unique_id()
-                patient_id = st.text_input(f"Patient ID for {req['name']}", value=suggested_id, key=f"id_{req['id']}")
-            
+                med_name = st.text_input("Medication Name*")
+                dosage = st.text_input("Dosage*", placeholder="e.g., 500mg")
+                frequency = st.selectbox("Frequency", ["Once daily", "Twice daily", "Three times daily", "Weekly"])
             with col2:
-                if st.button("✅ Approve", key=f"approve_{req['id']}"):
-                    approve_request(req['id'], patient_id)
-                    st.success(f"✅ Patient {req['name']} approved! Patient ID: {patient_id}")
-                    st.info(f"📌 Patient can now login using ID: {patient_id} and Name: {req['name']}")
-                    st.rerun()
+                duration = st.text_input("Duration", placeholder="e.g., 7 days, 1 month")
+                instructions = st.text_area("Special Instructions", placeholder="e.g., Take with food, after meal")
             
-            with col3:
-                if st.button("❌ Reject", key=f"reject_{req['id']}"):
-                    reject_request(req['id'])
-                    st.warning(f"❌ Registration request from {req['name']} rejected")
-                    st.rerun()
+            submitted = st.form_submit_button("💊 Prescribe Medication")
             
-            st.markdown("---")
+            if submitted and med_name and dosage:
+                add_doctor_medication(patient_id, doctor_username, doctor_name, med_name, dosage, frequency, duration, instructions)
+                st.success(f"✅ {med_name} prescribed to {patient_name}!")
+                st.rerun()
+            elif submitted:
+                st.warning("Please fill medication name and dosage")
+    
+    with tabs[3]:
+        st.markdown("### 📝 Add Medical Note")
+        with st.form("doctor_note_form"):
+            note = st.text_area("Medical Note / Clinical Notes", height=150, 
+                               placeholder="e.g., Patient presented with... Examination findings... Diagnosis...")
+            
+            if st.form_submit_button("➕ Add Note"):
+                if note:
+                    add_patient_note(patient_id, doctor_username, doctor_name, note)
+                    st.success("✅ Medical note added!")
+                    st.rerun()
+                else:
+                    st.warning("Please enter a note")
+        
+        st.markdown("### 📋 Previous Medical Notes")
+        patient_notes = get_patient_notes(patient_id)
+        if patient_notes:
+            for note in reversed(patient_notes[-10:]):
+                st.markdown(f"""
+                <div class="medical-note">
+                    <strong>👨‍⚕️ {note['doctor_name']}</strong> | 📅 {note['created_at']}<br>
+                    📝 {note['note']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No medical notes yet.")
+    
+    with tabs[4]:
+        st.markdown("### 📅 Add Follow-up Advice")
+        with st.form("followup_form"):
+            advice = st.text_area("Follow-up Advice / Instructions", height=100,
+                                  placeholder="e.g., Come back after 2 weeks for review, Get blood tests done...")
+            followup_date = st.date_input("Suggested Follow-up Date")
+            
+            if st.form_submit_button("➕ Add Follow-up"):
+                if advice:
+                    add_followup(patient_id, doctor_username, doctor_name, advice, followup_date.strftime("%Y-%m-%d"))
+                    st.success("✅ Follow-up advice added!")
+                    st.rerun()
+                else:
+                    st.warning("Please enter advice")
+        
+        st.markdown("### 📋 Previous Follow-ups")
+        followups = get_followups(patient_id)
+        if followups:
+            for fup in reversed(followups[-10:]):
+                st.markdown(f"""
+                <div class="follow-up">
+                    <strong>👨‍⚕️ {fup['doctor_name']}</strong> | 📅 Added: {fup['created_at']}<br>
+                    <strong>📌 Advice:</strong> {fup['advice']}<br>
+                    <strong>📅 Follow-up Date:</strong> {fup['followup_date']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No follow-up advice yet.")
+    
+    with tabs[5]:
+        st.markdown("### 💊 Prescribed Medications")
+        doctor_meds = get_doctor_medications(patient_id)
+        if doctor_meds:
+            for med in reversed(doctor_meds):
+                st.markdown(f"""
+                <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #f59e0b;">
+                    <strong>💊 {med['med_name']}</strong> | {med['dosage']} | {med['frequency']}<br>
+                    <strong>📋 By:</strong> {med['doctor_name']} | 📅 {med['prescribed_at']}<br>
+                    <strong>📝 Instructions:</strong> {med['instructions'] if med['instructions'] else 'None'}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No medications prescribed by doctors yet.")
 
 # ==================== ADMIN DASHBOARD ====================
 
@@ -1035,8 +1190,7 @@ def show_admin_dashboard():
             pending = len([a for a in st.session_state.appointments if a.get('status') == 'pending'])
             st.markdown(f'<div class="metric-card"><div class="metric-value">{pending}</div><div class="metric-label">Pending Appointments</div></div>', unsafe_allow_html=True)
         
-        # Pending approvals summary
-        pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending'])
+        pending_requests = len([r for r in st.session_state.registration_requests if r['status'] == 'pending' and r.get('source') != 'manual'])
         if pending_requests > 0:
             st.warning(f"📝 You have {pending_requests} pending patient registration approvals. Go to 'Pending Approvals' to review.")
         
@@ -1129,9 +1283,6 @@ def show_admin_dashboard():
                     st.success("Appointment deleted!")
                     st.rerun()
     
-    elif menu == "⏰ Medicine Reminders":
-        show_reminder_management()
-    
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
     
@@ -1162,11 +1313,11 @@ def show_admin_dashboard():
         
         Features:
         - Patient Self Registration with Admin Approval
+        - Manual Patient Entry by Admin for Walk-ins
         - Admin generates Unique Patient ID
         - Secure Admin, Doctor & Patient Portals
         - Vitals Tracking (BP, Sugar, Heart Rate)
-        - Medication Prescription & Tracking
-        - Medicine Reminders with Alarm
+        - Doctor can prescribe medications, add medical notes, and follow-up advice
         - Appointment Request/Accept Workflow
         - Health Analytics Dashboard
         - PDF Reports Generation
@@ -1360,22 +1511,38 @@ def show_doctor_portal():
         my_patient_ids = set([a['patient_id'] for a in st.session_state.appointments if a.get('doctor_username') == doctor_username and a['status'] == 'accepted'])
         
         if my_patient_ids:
-            for pid in my_patient_ids:
-                patient = get_patient_by_id(pid)
-                if patient:
-                    with st.expander(f"👤 {patient['name']} (ID: {pid})"):
-                        st.write(f"**Age:** {patient['age']}")
-                        st.write(f"**Gender:** {patient['gender']}")
-                        st.write(f"**Contact:** {patient.get('contact', 'N/A')}")
-                        st.write(f"**Address:** {patient.get('address', 'N/A')}")
-                        
-                        patient_vitals = [v for v in st.session_state.vitals if v['patient_id'] == pid]
-                        if patient_vitals:
-                            st.write("**Recent Vitals:**")
-                            df = pd.DataFrame(patient_vitals[-3:])
-                            st.dataframe(df[['date', 'bp_systolic', 'bp_diastolic', 'heart_rate']], use_container_width=True)
+            # Also include patients who have been prescribed medications or notes by this doctor
+            med_patients = set([m['patient_id'] for m in st.session_state.doctor_medications if m['doctor_username'] == doctor_username])
+            note_patients = set([n['patient_id'] for n in st.session_state.patient_notes if n['doctor_username'] == doctor_username])
+            all_patient_ids = my_patient_ids.union(med_patients).union(note_patients)
+            
+            if all_patient_ids:
+                for pid in all_patient_ids:
+                    patient = get_patient_by_id(pid)
+                    if patient:
+                        with st.expander(f"👤 {patient['name']} (ID: {pid})", expanded=False):
+                            if st.button(f"📋 View & Manage {patient['name']}", key=f"manage_{pid}"):
+                                st.session_state.selected_patient_for_doctor = pid
+                                st.session_state.show_patient_detail = True
+                                st.rerun()
+                            
+                            # Quick preview
+                            st.write(f"**Age:** {patient['age']} | **Gender:** {patient['gender']}")
+                            st.write(f"**Contact:** {patient.get('contact', 'N/A')}")
+                else:
+                    st.info("No patients assigned yet.")
+            else:
+                st.info("No patients assigned yet.")
         else:
             st.info("No patients assigned yet.")
+        
+        # Show detailed view if selected
+        if st.session_state.get('show_patient_detail', False):
+            patient_id = st.session_state.get('selected_patient_for_doctor')
+            if patient_id:
+                patient = get_patient_by_id(patient_id)
+                if patient:
+                    show_doctor_patient_details(patient_id, patient['name'], doctor_username, doctor_name)
     
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
@@ -1388,7 +1555,10 @@ def show_doctor_portal():
         - ✅ View and manage appointment requests
         - ✅ Accept or decline patient appointments
         - ✅ View your schedule and patient list
-        - ✅ Access patient health records
+        - ✅ Prescribe medications to patients
+        - ✅ Add medical notes and clinical observations
+        - ✅ Schedule follow-up appointments with advice
+        - ✅ Access complete patient health records
         - ✅ AI Health Assistant for clinical support
         """)
 
@@ -1422,6 +1592,30 @@ def show_patient_portal():
         if accepted_appointments:
             st.success(f"✅ You have {len(accepted_appointments)} accepted appointments")
         
+        # Show doctor's prescribed medications
+        doctor_meds = get_doctor_medications(patient_id)
+        if doctor_meds:
+            st.subheader("💊 Prescribed by Doctors")
+            for med in doctor_meds[-5:]:
+                st.markdown(f"""
+                <div style="background: #fef3c7; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
+                    <strong>{med['med_name']}</strong> - {med['dosage']} ({med['frequency']})<br>
+                    <small>👨‍⚕️ Dr. {med['doctor_name']} | 📅 {med['prescribed_at'][:10]}</small>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Show follow-ups
+        followups = get_followups(patient_id)
+        if followups:
+            st.subheader("📅 Upcoming Follow-ups")
+            for fup in followups[-3:]:
+                st.markdown(f"""
+                <div style="background: #e0f2fe; padding: 10px; border-radius: 8px; margin-bottom: 8px;">
+                    <strong>📅 Follow-up Date:</strong> {fup['followup_date']}<br>
+                    <strong>📝 Advice:</strong> {fup['advice'][:100]}...
+                </div>
+                """, unsafe_allow_html=True)
+        
         if patient_vitals:
             st.subheader("Recent Vitals")
             df = pd.DataFrame(patient_vitals[-5:])
@@ -1445,9 +1639,6 @@ def show_patient_portal():
         else:
             st.info("No appointments scheduled.")
     
-    elif menu == "⏰ My Reminders":
-        show_reminder_management()
-    
     elif menu == "🤖 AI Assistant":
         chatbot_ui()
     
@@ -1459,9 +1650,13 @@ def show_patient_portal():
             b64 = base64.b64encode(csv.encode()).decode()
             st.markdown(f'<a href="data:file/csv;base64,{b64}" download="my_vitals.csv">📥 Export CSV</a>', unsafe_allow_html=True)
         
-        elif menu == "💊 My Medications" and patient_meds:
-            df = pd.DataFrame(patient_meds)
-            st.dataframe(df[['med_name', 'dosage', 'frequency', 'start_date', 'end_date', 'status']], use_container_width=True)
+        elif menu == "💊 My Medications":
+            all_meds = patient_meds + get_doctor_medications(patient_id)
+            if all_meds:
+                df = pd.DataFrame(all_meds)
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("No medications prescribed yet.")
         
         elif menu == "📈 My Analytics" and len(patient_vitals) > 1:
             df = pd.DataFrame(patient_vitals)
@@ -1485,17 +1680,42 @@ VITALS HISTORY:
             report += "\n\nMEDICATIONS:\n"
             for m in patient_meds:
                 report += f"\n{m['med_name']}: {m['dosage']}"
-            st.text_area("Report", report, height=300)
+            
+            doctor_meds = get_doctor_medications(patient_id)
+            if doctor_meds:
+                report += "\n\nDOCTOR PRESCRIBED MEDICATIONS:\n"
+                for m in doctor_meds:
+                    report += f"\n{m['med_name']}: {m['dosage']} ({m['frequency']}) - Dr. {m['doctor_name']}"
+            
+            st.text_area("Report", report, height=400)
             b64 = base64.b64encode(report.encode()).decode()
             st.markdown(f'<a href="data:text/plain;base64,{b64}" download="my_report.txt">📥 Download Report</a>', unsafe_allow_html=True)
         
         elif menu == "ℹ️ About":
             st.header("About Your Portal")
-            st.markdown("View your medical records, track vitals, and manage appointments.")
+            st.markdown("""
+            **Your Personal Health Portal**
+            
+            Here you can:
+            - ✅ View your medical records
+            - ✅ Track your vitals over time
+            - ✅ See prescribed medications
+            - ✅ Check your appointments
+            - ✅ View doctor's notes and follow-up advice
+            - ✅ Download your health reports
+            - ✅ Chat with our AI Health Assistant
+            
+            Stay healthy! 💙
+            """)
 
 # ==================== MAIN ====================
 
 def main():
+    if 'show_patient_detail' not in st.session_state:
+        st.session_state.show_patient_detail = False
+    if 'selected_patient_for_doctor' not in st.session_state:
+        st.session_state.selected_patient_for_doctor = None
+    
     if not st.session_state.logged_in:
         show_login_page()
     else:
